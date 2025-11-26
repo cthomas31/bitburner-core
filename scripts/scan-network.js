@@ -62,6 +62,7 @@ export async function main(ns) {
     }
   }
 
+  const start = "home";
   const network = await buildNetworkMap(ns, start);
 
   await explore(ns, {
