@@ -10,50 +10,15 @@
  *
  * Output: writes a JSON object to /data/network.json
  *
- * Dependencies: lib/ns-io.js, lib/constants.js
+ * Dependencies: lib/network.js, lib/ns-io.js, lib/constants.js
  */
 
-import {readJSON, writeJSON} from '/lib/ns-io.js';
-import {NETWORK_FILE} from '/lib/constants.js';
+import { buildNetworkMap, explore } from '/lib/network.js';
+import { writeJSON } from '/lib/ns-io.js';
+import { NETWORK_FILE } from '/lib/constants.js';
 
 /** @param {NS} ns */
 export async function main(ns) {
-  // Object keyed by server name. Each entry contains details about the server.
-  const network = {};
-  const visited = new Set();
-
-  /**
-   * Recursively explore the network starting from a given server.
-   * Uses depth-first traversal to find all connected servers.
-   *
-   * @param {string} server
-   */
-  async function explore(server) {
-    visited.add(server);
-    const neighbors = ns.scan(server);
-    for (const neighbor of neighbors) {
-      if (neighbor === 'home' || visited.has(neighbor)) continue;
-      // gather static metadata
-      const maxMoney = ns.getServerMaxMoney(neighbor);
-      const minSec   = ns.getServerMinSecurityLevel(neighbor);
-      const reqHack  = ns.getServerRequiredHackingLevel(neighbor);
-      const portsReq = ns.getServerNumPortsRequired(neighbor);
-      const ram      = ns.getServerUsedRam(neighbor);
-      const rooted   = ns.hasRootAccess(neighbor);
-      network[neighbor] = {
-        name: neighbor,
-        maxMoney,
-        minSec,
-        reqHack,
-        portsReq,
-        ram,
-        rooted
-      };
-      // attempt to gain root if possible
-      await tryRoot(neighbor, portsReq);
-      await explore(neighbor);
-    }
-  }
 
   /**
    * Attempt to gain root access on a server by opening the required number of ports.
@@ -97,7 +62,17 @@ export async function main(ns) {
     }
   }
 
-  await explore('home');
+  const network = await buildNetworkMap(ns, start);
+
+  await explore(ns, {
+    start,
+    visit: async (host, { depth, parent }) => {
+      if (host === 'home') return;
+      tryRoot(host, network[host].numOpenPortsRequired);
+      return;
+    }
+  });
+
   await writeJSON(ns, NETWORK_FILE, network);
   ns.tprint(`scan-network: discovered ${Object.keys(network).length} servers (saved to ${NETWORK_FILE})`);
 }

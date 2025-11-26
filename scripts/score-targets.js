@@ -28,20 +28,20 @@ export async function main(ns) {
   for (const host of Object.keys(network)) {
     const info = network[host];
     const currentMoney = ns.getServerMoneyAvailable(host);
-    if (!info.rooted) continue;
-    if (info.maxMoney <= MIN_ABSOLUTE_MONEY) continue;
-    if (currentMoney <= info.maxMoney * MIN_RELATIVE_MONEY) continue;
-    if (info.reqHack > hackingLevel) continue;
+    if (!info.hasAdminRights) continue;
+    if (info.moneyMax <= MIN_ABSOLUTE_MONEY) continue;
+    if (currentMoney <= info.moneyMax * MIN_RELATIVE_MONEY) continue;
+    if (info.requiredHackingSkill > hackingLevel) continue;
 
     const hackTime = ns.getHackTime(host); // milliseconds
     // Score formula: maximize money while minimizing hack time and required hack level.
-    const score = info.maxMoney / ((hackTime / 1000) * (info.reqHack + 1));
+    const score = info.moneyMax / ((hackTime / 1000) * (info.requiredHackingSkill + 1));
     targets.push({
       host,
       score,
       currentMoney,
-      maxMoney: info.maxMoney,
-      reqHack: info.reqHack,
+      maxMoney: info.moneyMax,
+      reqHack: info.requiredHackingSkill,
       hackTime
     });
   }
