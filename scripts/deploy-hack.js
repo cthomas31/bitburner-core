@@ -42,9 +42,11 @@ export async function main(ns) {
     }
   }
 
+  let serverCount = 0;
+  let totalThreads = 0;
   for (const host of networkHosts) {
     const info = network[host];
-    if (host !== 'home' && !info.rooted) continue;
+    if (host !== 'home' && !info.hasAdminRights) continue;
     // Determine available RAM on the host
     const maxRam = ns.getServerMaxRam(host);
     const usedRam = ns.getServerUsedRam(host);
@@ -72,9 +74,12 @@ export async function main(ns) {
     const threads = Math.floor((freeRam * THREAD_BUFFER) / scriptRam);
     if (threads < 1) continue;
 
+    serverCount++;
+    totalThreads += threads;
     const pid = ns.exec(script, host, threads, target, MONEY_THRESHOLD, SECURITY_MARGIN);
     if (pid !== 0) {
       ns.print(`Started ${script} on ${host} (${threads} threads) targeting ${target}`);
     }
   }
+  ns.tprint(`deploy-hack: deployed hack-loop to ${serverCount} servers with ${totalThreads} threads.`);
 }

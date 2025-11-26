@@ -54,7 +54,7 @@ export async function main(ns) {
     if (portsOpened >= portsReq) {
       try {
         ns.nuke(host);
-        network[host].rooted = true;
+        network[host].hasAdminRights = true;
         ns.print(`Rooted ${host}`);
       } catch (e) {
         ns.print(`Failed to nuke ${host}: ${e}`);
