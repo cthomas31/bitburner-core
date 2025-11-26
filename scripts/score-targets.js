@@ -34,15 +34,18 @@ export async function main(ns) {
     if (info.requiredHackingSkill > hackingLevel) continue;
 
     const hackTime = ns.getHackTime(host); // milliseconds
-    // Score formula: maximize money while minimizing hack time and required hack level.
-    const score = info.moneyMax / ((hackTime / 1000) * (info.requiredHackingSkill + 1));
+    // const score = info.moneyMax / ((hackTime / 1000) * (info.requiredHackingSkill + 1));
+    const cycleTime = info.hackTime + info.weakenTime + info.growTime;
+    const score = info.moneyMax / info.minDifficulty / cycleTime;
+
     targets.push({
       host,
       score,
       currentMoney,
       maxMoney: info.moneyMax,
       reqHack: info.requiredHackingSkill,
-      hackTime
+      hackTime,
+      cycleTime
     });
   }
 
@@ -57,6 +60,6 @@ export async function main(ns) {
   ns.tprint('Top targets:');
   for (let i = 0; i < Math.min(5, targets.length); i++) {
     const t = targets[i];
-    ns.tprint(`${i + 1}. ${t.host} | score: ${t.score.toFixed(2)} | current: $${ns.formatNumber(t.currentMoney, 2)} | max: $${ns.formatNumber(t.maxMoney, 2)} | reqHack: ${t.reqHack}`);
+    ns.tprint(`${i + 1}. ${t.host} | score: ${t.score.toFixed(2)} | money: $${ns.formatNumber(t.currentMoney, 2)} / $${ns.formatNumber(t.maxMoney, 2)} | cycle: ${ns.formatNumber(t.cycleTime/1000, 2)} secs | reqHack: ${t.reqHack}`);
   }
 }
