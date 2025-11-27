@@ -1,5 +1,6 @@
 import { getRootedServers } from "/lib/network.js";
-import { MONEY_THRESHOLD, SECURITY_MARGIN, HACK_MARGIN } from "/lib/constants";
+import { MONEY_THRESHOLD, SECURITY_MARGIN, HACK_MARGIN, HOME_RESERVED_RAM } from "/lib/constants";
+import { formatMoney } from "/lib/util";
 
 /** @param {NS} ns **/
 export async function main(ns) {
@@ -28,7 +29,7 @@ export async function main(ns) {
     ns.disableLog("getServerSecurityLevel");
     ns.disableLog("sleep");
 
-    while (true) {
+    for (;;) {
         const s = ns.getServer(target);
         const minSec = s.minDifficulty;
         const sec = s.hackDifficulty;
@@ -37,8 +38,6 @@ export async function main(ns) {
         const maxMoney = s.moneyMax;
         const money = s.moneyAvailable;
         const moneyRatio = maxMoney > 0 ? money / maxMoney : 0;
-
-        const player = ns.getPlayer();
 
         // Decide how many threads we *want*
         let weakenThreadsNeeded = 0;
@@ -124,10 +123,7 @@ export async function main(ns) {
         }
 
         ns.print(
-            `sec=${sec.toFixed(2)} (min ${minSec}), money=${ns.nFormat(money, "0.0a")}/${ns.nFormat(
-                maxMoney,
-                "0.0a"
-            )} ratio=${(moneyRatio * 100).toFixed(1)}% | W=${weakenToLaunch} G=${growToLaunch} H=${hackToLaunch}`
+            `sec=${sec.toFixed(2)} (min ${minSec}), money=${formatMoney(money)}/${formatMoney(maxMoney)} ratio=${(moneyRatio * 100).toFixed(1)}% | W=${weakenToLaunch} G=${growToLaunch} H=${hackToLaunch}`
         );
 
         await ns.sleep(interval);
@@ -146,6 +142,9 @@ async function totalFreeRam(ns) {
         const max = ns.getServerMaxRam(host);
         const used = ns.getServerUsedRam(host);
         total += Math.max(0, max - used);
+        if (host == 'home') {
+            total -= HOME_RESERVED_RAM;
+        }
     }
     return total;
 }
@@ -164,7 +163,7 @@ async function launchDistributed(ns, script, target, totalThreads) {
     for (const host of servers) {
         const maxRam = ns.getServerMaxRam(host);
         const usedRam = ns.getServerUsedRam(host);
-        const freeRam = Math.max(0, maxRam - usedRam);
+        const freeRam = Math.max(0, maxRam - usedRam) - (host === "home" ? HOME_RESERVED_RAM : 0);
         const possibleThreads = Math.floor(freeRam / scriptRam);
         if (possibleThreads <= 0) continue;
 
