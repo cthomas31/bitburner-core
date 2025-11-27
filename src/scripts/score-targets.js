@@ -24,12 +24,13 @@ import { formatMoney, formatTime } from '/lib/util.js';
 export async function main(ns) {
     const network = await readJSON(ns, NETWORK_FILE) || {};
     const hackingLevel = ns.getHackingLevel();
-    const haveFormulas = !!ns.formulas?.hacking;
+    const haveFormulas = ns.fileExists("Formulas.exe", "home") && ns.formulas?.hacking;
     const targets = [];
 
     for (const host of Object.keys(network)) {
         const info = network[host];
         const currentMoney = ns.getServerMoneyAvailable(host);
+        const currentSecurity = ns.getServerSecurityLevel(host);
         if (!info.hasAdminRights) continue;
         if (info.moneyMax <= MIN_ABSOLUTE_MONEY) continue;
         if (currentMoney <= info.moneyMax * MIN_RELATIVE_MONEY) continue;
@@ -55,6 +56,8 @@ export async function main(ns) {
             host,
             score,
             currentMoney,
+            currentSecurity,
+            minSecurity: info.minDifficulty,
             maxMoney: info.moneyMax,
             reqHack: info.requiredHackingSkill,
             hackTime: info.hackTime,
@@ -77,12 +80,12 @@ export async function main(ns) {
    score: $${formatMoney(t.score)} ${haveFormulas ? 'per second' : 'per security-point per second (max)'}
    money: $${formatMoney(t.currentMoney)} available of $${formatMoney(t.maxMoney)} 
    cycle: hack: ${formatTime(t.hackTime)}, weaken: ${formatTime(t.weakenTime)}, grow: ${formatTime(t.growTime)}
-   required hacking level: ${t.reqHack}`;
+   security: required: ${t.reqHack}, min: ${t.minSecurity}, current: ${t.currentSecurity.toFixed(2)}`;
     }
 
     const topTargets =
-        'Top targets:\n' +
-        targets.slice(0, 5).map(renderTarget).join('\n');
+        `Player hacking level ${hackingLevel} Formulas unlocked: ${haveFormulas ? "yes" : "no"}\nTop targets:\n` +
+        targets.slice(0, 4).map(renderTarget).join('\n');
     ns.tprint(topTargets);
 }
 
