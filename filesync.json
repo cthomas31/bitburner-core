@@ -6,12 +6,12 @@
   ],
   "allowDeletingFiles": true,
   "port": 12525,
-  "scriptsFolder": ".",
+  "scriptsFolder": "dist",
   "quiet": false,
   "dry": false,
   "definitionFile": {
-    "update": false,
-    "location": "NetScriptDefinitions.d.ts"
+    "update": true,
+    "location": "NetscriptDefinitions.d.ts"
   },
   "pushAllOnConnection": false
 }
