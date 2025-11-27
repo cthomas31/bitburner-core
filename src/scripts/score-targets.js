@@ -18,6 +18,7 @@
 
 import {readJSON, writeJSON} from '/lib/ns-io.js';
 import {NETWORK_FILE, TARGETS_FILE, MIN_ABSOLUTE_MONEY, MIN_RELATIVE_MONEY} from '/lib/constants.js';
+import {formatMoney, formatTime} from '/lib/util.js';
 
 /** @param {NS} ns */
 export async function main(ns) {
@@ -33,8 +34,6 @@ export async function main(ns) {
     if (currentMoney <= info.moneyMax * MIN_RELATIVE_MONEY) continue;
     if (info.requiredHackingSkill > hackingLevel) continue;
 
-    const hackTime = ns.getHackTime(host); // milliseconds
-    // const score = info.moneyMax / ((hackTime / 1000) * (info.requiredHackingSkill + 1));
     const cycleTime = info.hackTime + info.weakenTime + info.growTime;
     const score = info.moneyMax / info.minDifficulty / cycleTime;
 
@@ -44,8 +43,9 @@ export async function main(ns) {
       currentMoney,
       maxMoney: info.moneyMax,
       reqHack: info.requiredHackingSkill,
-      hackTime,
-      cycleTime
+      hackTime: info.hackTime,
+      weakenTime: info.weakenTime,
+      growTime: info.growTime
     });
   }
 
@@ -57,9 +57,18 @@ export async function main(ns) {
     ns.tprint('score-targets: no hackable servers found');
     return;
   }
-  ns.tprint('Top targets:');
-  for (let i = 0; i < Math.min(5, targets.length); i++) {
-    const t = targets[i];
-    ns.tprint(`${i + 1}. ${t.host} | score: ${t.score.toFixed(2)} | money: $${ns.formatNumber(t.currentMoney, 2)} / $${ns.formatNumber(t.maxMoney, 2)} | cycle: ${ns.formatNumber(t.cycleTime/1000, 2)} secs | reqHack: ${t.reqHack}`);
-  }
+  
+  const topTargets =
+    'Top targets:\n' +
+    targets.slice(0, 5).map(renderTarget).join('\n');
+  ns.tprint(topTargets);
 }
+
+function renderTarget(t, i) {
+  return `${i + 1}. ${t.host}
+   score: $${formatMoney(t.score)} per security-point per millisecond
+   money: $${formatMoney(t.currentMoney)} available of $${formatMoney(t.maxMoney)} 
+   cycle: hack: ${formatTime(t.hackTime)}, weaken: ${formatTime(t.weakenTime)}, grow: ${formatTime(t.growTime)}
+   required hacking level: ${t.reqHack}`;
+}
+

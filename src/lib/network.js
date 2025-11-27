@@ -154,3 +154,21 @@ export async function findPath(ns, target, start = 'home') {
     }
     return path.reverse();
 }
+
+/** 
+ * Get all rooted servers.
+ *
+ * @param {NS} ns
+ * @returns {string[]} Array of hostnames
+ */
+export async function getRootedServers(ns) {
+    let results = [];
+    await explore(ns, {
+        start: "home",
+        visit: (host) => {
+            const s = ns.getServer(host);
+            if (s.hasAdminRights && s.maxRam > 0) results.push(host);
+        }
+    });
+    return results;
+};

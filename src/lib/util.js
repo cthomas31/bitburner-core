@@ -18,3 +18,19 @@ export function formatMoney(n) {
   if (abs >= 1e3) return (n / 1e3).toFixed(2) + "k";
   return n.toFixed(2);
 }
+
+/**
+ * Format a time duration given in milliseconds into a string with minutes and seconds.
+ *
+ * @param {number} ms
+ * @returns {string}
+ */
+export function formatTime(ms) {
+  const totalSeconds = ms / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const minuteLabel = minutes === 1 ? 'minute' : 'minutes';
+  const minutesPart = minutes > 0 ? `${minutes} ${minuteLabel} ` : '';
+
+  return `${minutesPart}${seconds.toFixed(2)} seconds`;
+}
