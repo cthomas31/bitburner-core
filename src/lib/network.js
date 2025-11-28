@@ -171,4 +171,4 @@ export async function getRootedServers(ns) {
         }
     });
     return results;
-};
+}

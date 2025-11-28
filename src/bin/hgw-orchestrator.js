@@ -157,7 +157,9 @@ async function launchDistributed(ns, script, target, totalThreads) {
         return 0;
     }
 
-    const servers = await getRootedServers(ns);
+    const rootedServers = await getRootedServers(ns);
+    const pservers = ns.getPurchasedServers();
+    const servers = [...rootedServers, ...pservers];
     let remaining = totalThreads;
 
     for (const host of servers) {
