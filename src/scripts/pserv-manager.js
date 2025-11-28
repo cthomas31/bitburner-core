@@ -30,7 +30,7 @@
 import { PSERV_CONFIG } from "/lib/constants.js";
 import { getBestTarget } from "/lib/targets.js";
 
-const WORKER_SCRIPT = "/scripts/hack-loop.js";
+const WORKER_SCRIPT = "/scripts/weaken-once.js";
 
 /** @param {NS} ns */
 export async function main(ns) {
