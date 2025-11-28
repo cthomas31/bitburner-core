@@ -188,20 +188,38 @@ async function manageFleetROI(ns, cfg) {
             ` | payback≈${paybackStr}`
         );
 
-        killAllOnHost(ns, best.hostname);
-
-        if (!ns.deleteServer(best.hostname)) {
-            ns.print(
-                `[pserv-manager] deleteServer(${best.hostname}) failed; scripts may still be running.`
-            );
+        // 1) kill everything on the host
+        const killedOk = await killAllOnHost(ns, best.hostname, 8000);
+        if (!killedOk) {
+            ns.print(`[pserv-manager] Warning: couldn't fully kill scripts on ${best.hostname}; aborting upgrade.`);
             return;
         }
 
-        const res = ns.purchaseServer(best.hostname, best.newRam);
-        if (!res) {
+        // 2) attempt delete with retries
+        let deleted = false;
+        for (let attempt = 0; attempt < 6; attempt++) {
+            if (ns.deleteServer(best.hostname)) {
+                deleted = true;
+                break;
+            }
+            ns.print(`[pserv-manager] deleteServer failed on attempt ${attempt+1}; retrying...`);
+            await ns.sleep(500 + attempt * 200);
+        }
+        if (!deleted) {
+            ns.print(`[pserv-manager] deleteServer(${best.hostname}) failed after retries; aborting.`);
+            return;
+        }
+
+        // 3) ensure hostname is free in purchased list (safety)
+        await ns.sleep(200); // tiny delay for the runtime to update lists
+
+        // 4) Purchase the new server
+        const purchased = ns.purchaseServer(best.hostname, best.newRam);
+        if (!purchased) {
             ns.print("[pserv-manager] purchaseServer() failed after delete; aborting.");
             return;
         }
+        ns.tprint(`[pserv-manager] Successfully purchased ${best.hostname} (${best.newRam} GB).`);
 
         ns.tprint(
             `[pserv-manager] Replaced ${best.hostname} with ${best.newRam} GB.` +
@@ -332,14 +350,29 @@ function clampToPowerOfTwo(x) {
     return p;
 }
 
-/** Kill all scripts on a given host. */
-/** @param {NS} ns */
-function killAllOnHost(ns, hostname) {
-    const procs = ns.ps(hostname);
-    for (const p of procs) {
-        ns.kill(p.pid);
+/** Kill all scripts on a given host, and wait until they are gone.
+ *  It then polls until ns.ps(host) is empty (or until `timeoutMs`).
+ *  Returns true if successful, false if timeout reached.
+ *  @param {NS} ns
+ *  @param {string} hostname
+ *  @param {number} timeoutMs
+ */
+async function killAllOnHost(ns, hostname, timeoutMs = 5000) {
+    const anyKilled = ns.killall(hostname);
+
+    // Wait until ps is empty or timeout
+    if (anyKilled) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const remaining = ns.ps(hostname);
+            if (!remaining || remaining.length === 0) return true;
+            await ns.sleep(200);
+        }
     }
+    // Return whether host is now free of scripts
+    return (ns.ps(hostname) || []).length === 0;
 }
+
 
 /**
  * Find the next numeric index to use for a new pserv name like "pserv-3".

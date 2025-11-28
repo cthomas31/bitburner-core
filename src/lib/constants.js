@@ -72,7 +72,7 @@ export const PSERV_CONFIG = {
     // Budget per purchase: we only spend up to this fraction of current cash,
     // and we always try to keep minCashReserve in the bank.
     maxSpendFraction: 0.1,       // 10% of current money per action
-    minCashReserve: 150_000_000_000,  // don’t go below this
+    minCashReserve: 5_000_000_000,  // don’t go below this
 
     // ROI constraints
     roiMaxPaybackSeconds: 1 * 60 * 60, // max acceptable payback (~1 hour)
