@@ -79,3 +79,40 @@ export const PSERV_CONFIG = {
     roiMinDeltaThreads: 4,             // ignore “upgrades” that add fewer threads than this
     roiFudgeFactor: 0.5                // 0–1: downscale theoretical thread income for realism
 };
+
+// Configuration for batch-master.js to manage coordinated hack/grow/weaken batches
+export const BATCHER_CONFIG = {
+  // fractional portion of server.moneyMax to steal per batch (0.01 = 1%)
+  hackFractionPerBatch: 0.02,
+
+  // timing offsets (ms) to space end-times of actions within a batch.
+  // These are small delays to ensure ordering. Values tuned to be safe-ish.
+  // The scheduler will set startTime = baseEndTime - actionDuration - offset.
+  offsets: {
+    hack: 0,        // hack should finish first (base)
+    weaken1: 100,   // finish slightly after hack to remove hack security
+    grow: 200,      // grow should finish after weaken1
+    weaken2: 300    // final weaken to remove growth security
+  },
+
+  // safety margins
+  batchSpacingMs: 400,       // minimum spacing between baseEndTimes of consecutive batches
+  maxConcurrentBatches: 4,   // max batches in flight (global)
+  managerLoopMs: 3000,       // how often master wakes to plan new batches
+
+  // Required scripts (paths) — ensure these match your repo.
+  actionScripts: {
+    hack: "/scripts/hack-once.js",
+    grow: "/scripts/grow-once.js",
+    weaken: "/scripts/weaken-once.js",
+    timedRunner: "/scripts/timed-runner.js"
+  },
+
+  // worker selection: minimum free RAM to consider a host as worker (GB)
+  minWorkerFreeRam: 4,
+
+  // debug toggles
+  dryRun: false,
+  verbose: true
+};
+
