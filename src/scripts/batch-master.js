@@ -197,7 +197,7 @@ async function planOneCycle(ns, cfg, explicitTarget) {
   const candidates = [];
   const allHosts = await discoverRootedServers(ns);
   for (const h of allHosts) {
-    if (h === "home") continue; // optional: avoid using home for heavy execs
+    //if (h === "home") continue; // optional: avoid using home for heavy execs
     const free = ns.getServerMaxRam(h) - ns.getServerUsedRam(h);
     if (free >= cfg.minWorkerFreeRam) candidates.push({host: h, free});
   }

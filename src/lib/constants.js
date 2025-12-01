@@ -14,7 +14,7 @@ export const TARGETS_FILE = "/data/targets.json";
 // Fraction of a server's maximum money we aim to preserve before initiating a hack.
 // A higher number means the script waits until the server is very full of money before hacking,
 // resulting in slower hacks but less risk of running the server dry.
-export const MONEY_THRESHOLD = 0.75;
+export const MONEY_THRESHOLD = 0.9;
 
 // Money filters for scoring
 export const MIN_ABSOLUTE_MONEY = 0;  // 100M; ignore servers poorer than this
@@ -22,7 +22,7 @@ export const MIN_RELATIVE_MONEY = 0; // ignore servers with <5% of best maxMoney
 
 // Additional security above a server's minimum that we're willing to tolerate before weakening.
 // A small margin keeps the server closer to its minimum security level but will devote more time to weaken.
-export const SECURITY_MARGIN = 3;
+export const SECURITY_MARGIN = 2;
 
 // Maximum percentage of a server's money to attempt to hack in one go.
 export const HACK_MARGIN = 0.1; 

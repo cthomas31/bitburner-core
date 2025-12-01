@@ -2,6 +2,7 @@
  * find.js
  *
  * Find a host by name and print the path from "home" to that host.
+ * Also prints a one-liner you can paste to connect step-by-step.
  *
  * Usage: run bin/find.js <target-hostname>
  *
@@ -26,6 +27,16 @@ export async function main(ns) {
         return;
     }
 
-    ns.tprint(`Path to ${target}: `);
+    // Pretty path
+    ns.tprint(`Path to ${target}:`);
     ns.tprint(path.join(' -> '));
+
+    // Command chain: connect a ; connect b ; connect c
+    const connectCmd = path
+        .filter(h => h !== 'home') // you already start on home
+        .map(h => `connect ${h}`)
+        .join(' ; ');
+
+    ns.tprint('Connect command:');
+    ns.tprint(connectCmd);
 }

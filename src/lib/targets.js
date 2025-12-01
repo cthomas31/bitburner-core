@@ -32,7 +32,13 @@ export async function getBestTarget(ns, mode = "money") {
         sorted.sort((a, b) => b.scoreMoney - a.scoreMoney);
     }
 
-    return sorted[0] || null;
+    const best = sorted[0] || null;
+    if (best) {
+      ns.tprint(`Best target selected: ${best?.host || "none"} ` +
+                `| moneyScore=${best?.scoreMoney?.toFixed(2) || "N/A"} ` +
+                `| xpScore=${best?.scoreXp?.toFixed(2) || "N/A"}`);
+    }
+    return best;
 }
 
 /**
