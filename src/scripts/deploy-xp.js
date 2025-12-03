@@ -14,11 +14,12 @@ export async function main(ns) {
   ns.disableLog("getServerMaxRam");
   ns.disableLog("getServerUsedRam");
 
-  const useOnlyPservs = true; // set false if you want all rooted servers, not just pservs
+  const useOnlyPservs = false; // set false if you want all rooted servers, not just pservs
 
   // 1) Pick best XP target via Formulas
-  const xpTargetInfo = getBestXpTarget(ns);
-  const xpTarget = xpTargetInfo?.hostname || "n00dles";
+  //const xpTargetInfo = getBestXpTarget(ns);
+  //const xpTarget = xpTargetInfo?.hostname || "n00dles";
+  const xpTarget = "joesguns"; // temporarily disable Formulas use
   ns.tprint(`[deploy-xp] Best XP target selected: ${xpTarget}`);
 
   // 2) Determine script RAM

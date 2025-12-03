@@ -31,7 +31,7 @@ export async function main(ns) {
 
   // 4) Deploy hack-loop.js to each host and fill with threads
   for (const host of hosts) {
-    if (host === "home") continue; // optional, keep home clean
+    //if (host === "home") continue; // optional, keep home clean
 
     // Kill everything on the host so hack-loop gets full RAM
     ns.killall(host);
@@ -41,7 +41,8 @@ export async function main(ns) {
 
     const maxRam = ns.getServerMaxRam(host);
     const usedRam = ns.getServerUsedRam(host);
-    const freeRam = Math.max(0, maxRam - usedRam);
+    let freeRam = Math.max(0, maxRam - usedRam);
+    if (host === "home") freeRam -= 8; // reserve some RAM on home
     const threads = Math.floor(freeRam / scriptRam);
 
     if (threads < 1) {

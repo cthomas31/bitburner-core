@@ -27,7 +27,11 @@ export async function main(ns) {
     ns.disableLog("getServer");
     ns.disableLog("getServerMoneyAvailable");
     ns.disableLog("getServerSecurityLevel");
+    ns.disableLog("getServerUsedRam");
+    ns.disableLog("getServerMaxRam");
     ns.disableLog("sleep");
+    ns.disableLog("scan");
+    ns.disableLog("scp");
 
     for (;;) {
         const s = ns.getServer(target);
@@ -122,9 +126,10 @@ export async function main(ns) {
             await launchDistributed(ns, "/scripts/hack-once.js", target, hackToLaunch);
         }
 
-        ns.print(
-            `sec=${sec.toFixed(2)} (min ${minSec}), money=${formatMoney(money)}/${formatMoney(maxMoney)} ratio=${(moneyRatio * 100).toFixed(1)}% | W=${weakenToLaunch} G=${growToLaunch} H=${hackToLaunch}`
-        );
+        ns.print(`sec=${sec.toFixed(2)} (min ${minSec})`);
+        ns.print(`money=${formatMoney(money)}/${formatMoney(maxMoney)} ratio=${(moneyRatio * 100).toFixed(1)}%`);
+        ns.print(`totalRamFree=${totalRamFree.toFixed(2)} W=${weakenToLaunch} G=${growToLaunch} H=${hackToLaunch}`);
+
 
         await ns.sleep(interval);
     }

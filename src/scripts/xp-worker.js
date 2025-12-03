@@ -14,12 +14,12 @@ export async function main(ns) {
   }
 
   // How far above min difficulty we’re willing to tolerate before weakening.
-  const SEC_BUFFER = 1; // try 1–3; smaller = more time spent weakening
+  const SEC_BUFFER = 3; // try 1–3; smaller = more time spent weakening
 
-  ns.disableLog("getServer");
-  ns.disableLog("hack");
-  ns.disableLog("weaken");
-  ns.disableLog("sleep");
+  // ns.disableLog("getServer");
+  // ns.disableLog("hack");
+  // ns.disableLog("weaken");
+  // ns.disableLog("sleep");
 
   for (;;) {
     const s = ns.getServer(target);
