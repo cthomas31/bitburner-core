@@ -3,9 +3,9 @@
 /** @param {NS} ns */
 
 import { getRootedServers } from "/lib/network.js";
-import { SECURITY_MARGIN, MONEY_THRESHOLD } from "/lib/constants.js";
+import { HACK_CONFIG } from "/lib/constants.js";
 
-const HACK_LOOP_SCRIPT = "/scripts/hack-loop.js";
+const HACK_LOOP_SCRIPT = "/scripts/hack-loop/hack-loop.js";
 
 export async function main(ns) {
   const target = ns.args[0];
@@ -50,7 +50,7 @@ export async function main(ns) {
       continue;
     }
 
-    const pid = ns.exec(HACK_LOOP_SCRIPT, host, threads, target, SECURITY_MARGIN, MONEY_THRESHOLD);
+    const pid = ns.exec(HACK_LOOP_SCRIPT, host, threads, target, HACK_CONFIG.securityMargin, HACK_CONFIG.moneyThreshold);
     if (pid == 0) {
       ns.print(`[deploy-hack-loop] Failed to start hack-loop.js on ${host}`);
     } else {

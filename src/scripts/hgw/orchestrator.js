@@ -1,27 +1,20 @@
 import { getRootedServers } from "/lib/network.js";
-import { MONEY_THRESHOLD, SECURITY_MARGIN, HACK_MARGIN, HOME_RESERVED_RAM } from "/lib/constants";
+import { HACK_CONFIG } from "/lib/constants.js";
 import { formatMoney } from "/lib/util";
 
 /** @param {NS} ns **/
 export async function main(ns) {
-    const args = ns.flags([
-        ["target", ""],
-        ["moneyPct", MONEY_THRESHOLD],  // desired fraction of max money
-        ["secMargin", SECURITY_MARGIN], // allowed security above min
-        ["hackPct", HACK_MARGIN],       // try to steal up to 10% per wave
-        ["interval", 2000],             // ms between decisions
-    ]);
+    const target = ns.args[0];
 
-    if (!args.target) {
-        ns.tprint("Usage: run bin/hgw-orchestrator.js --target <hostname> [--moneyPct 0.8] [--secMargin 3]");
+    if (!target) {
+        ns.tprint("Usage: run scripts/hgw/orchestrator.js --target <hostname> [--moneyPct 0.8] [--secMargin 3]");
         return;
     }
 
-    const target = args.target;
-    const moneyPct = args.moneyPct;
-    const secMargin = args.secMargin;
-    const hackPct = args.hackPct;
-    const interval = args.interval;
+    const moneyPct = HACK_CONFIG.moneyThreshold;
+    const secMargin = HACK_CONFIG.securityMargin;
+    const hackPct = HACK_CONFIG.hackMargin;
+    const interval = HACK_CONFIG.interval;
 
     ns.print(`Starting HGW orchestrator for ${target}`);
     ns.disableLog("getServer");
@@ -78,6 +71,7 @@ export async function main(ns) {
 
         // Figure out how many threads are even available across the fleet
         const totalRamFree = await totalFreeRam(ns);
+        ns.print(`Total free RAM: ${totalRamFree.toFixed(2)} GB`);
         const weakenRam = ns.getScriptRam("/scripts/weaken-once.js", "home");
         const growRam = ns.getScriptRam("/scripts/grow-once.js", "home");
         const hackRam = ns.getScriptRam("/scripts/hack-once.js", "home");
@@ -148,7 +142,7 @@ async function totalFreeRam(ns) {
         const used = ns.getServerUsedRam(host);
         total += Math.max(0, max - used);
         if (host == 'home') {
-            total -= HOME_RESERVED_RAM;
+            total -= Math.max(0, HACK_CONFIG.homeReservedRam);
         }
     }
     return total;
@@ -170,7 +164,7 @@ async function launchDistributed(ns, script, target, totalThreads) {
     for (const host of servers) {
         const maxRam = ns.getServerMaxRam(host);
         const usedRam = ns.getServerUsedRam(host);
-        const freeRam = Math.max(0, maxRam - usedRam) - (host === "home" ? HOME_RESERVED_RAM : 0);
+        const freeRam = Math.max(0, maxRam - usedRam) - (host === "home" ? HACK_CONFIG.homeReservedRam : 0);
         const possibleThreads = Math.floor(freeRam / scriptRam);
         if (possibleThreads <= 0) continue;
 

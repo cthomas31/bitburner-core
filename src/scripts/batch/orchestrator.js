@@ -1,9 +1,9 @@
 /** @param {NS} ns
  *
- * Batch master orchestrator.
+ * Batch orchestrator.
  *
  * Usage:
- *   run scripts/batch-master.js
+ *   run scripts/batch/orchestrator.js
  *
  * Behavior:
  * - Picks a best target (you can adapt to use your targets.json or lib/targets.js)
@@ -16,6 +16,11 @@ import { BATCHER_CONFIG } from "/lib/constants.js";
 /** @param {NS} ns */
 export async function main(ns) {
   ns.disableLog("sleep");
+  ns.disableLog("getServerMaxRam");
+  ns.disableLog("getServerUsedRam");
+  ns.disableLog("scan");
+  ns.disableLog("scp");
+  ns.disableLog("exec");
   const cfg = BATCHER_CONFIG;
 
   // Optional explicit target: first arg, if provided.
@@ -183,6 +188,8 @@ async function planOneCycle(ns, cfg, explicitTarget) {
   const weakenScriptRam = ns.getScriptRam(cfg.actionScripts.weaken);
   const runnerRam = ns.getScriptRam(cfg.actionScripts.timedRunner);
 
+  ns.print(hackScriptRam, " ", growScriptRam, " ", weakenScriptRam, " ", runnerRam);
+
   const totalRamPerBatch = hackThreads * hackScriptRam
                           + growThreads * growScriptRam
                           + weakenThreads * weakenScriptRam
@@ -206,6 +213,7 @@ async function planOneCycle(ns, cfg, explicitTarget) {
   // quick capacity check: count aggregated free ram across top N hosts
   let aggFree = 0;
   for (const c of candidates) aggFree += c.free;
+  ns.print(aggFree, " ", totalRamPerBatch);
   if (aggFree < totalRamPerBatch) {
     ns.print("[batch-master] Not enough aggregate free RAM to run a batch; skipping this cycle.");
     return;

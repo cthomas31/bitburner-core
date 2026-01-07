@@ -11,31 +11,24 @@ export const NETWORK_FILE = "/data/network.json";
 // Path to the JSON file where score-targets.js writes sorted target data.
 export const TARGETS_FILE = "/data/targets.json";
 
-// Fraction of a server's maximum money we aim to preserve before initiating a hack.
-// A higher number means the script waits until the server is very full of money before hacking,
-// resulting in slower hacks but less risk of running the server dry.
-export const MONEY_THRESHOLD = 0.70;
+// Home reserved RAM to ensure smooth operation of other tasks.
+export const HOME_RESERVED_RAM = 20;
+
+export const HACK_CONFIG = {
+    // Fraction of a server's maximum money to aim for before hacking.
+    moneyThreshold: 0.70,
+    //
+    // Additional security above a server's minimum that we're willing to tolerate before weakening.
+    securityMargin: 2,
+    // Maximum percentage of a server's money to attempt to hack in one go.
+    hackMargin: 0.2,
+
+    homeReservedRam: HOME_RESERVED_RAM,
+};
 
 // Money filters for scoring
 export const MIN_ABSOLUTE_MONEY = 0;  // 100M; ignore servers poorer than this
 export const MIN_RELATIVE_MONEY = 0; // ignore servers with <5% of best maxMoney
-
-// Additional security above a server's minimum that we're willing to tolerate before weakening.
-// A small margin keeps the server closer to its minimum security level but will devote more time to weaken.
-export const SECURITY_MARGIN = 2;
-
-// Maximum percentage of a server's money to attempt to hack in one go.
-export const HACK_MARGIN = 0.2; 
-
-// Percentage of available RAM to use on each server when launching hack-loop threads.
-// Leaving a buffer reduces the chance of over-allocating RAM and crashing other scripts.
-export const THREAD_BUFFER = 0.9;
-
-// Amount of RAM (in GB) to reserve on the 'home' server to ensure smooth operation of other tasks.
-export const HOME_RESERVED_RAM = 8;
-
-// Whether to deploy hack-loop.js on the 'home' server in addition to other rooted servers.
-export const HOME_HACK_LOOP_DEPLOY = true;
 
 // Configuration for hacknet-manager.js to automate Hacknet Node upgrades
 export const HACKNET_CONFIG = {
@@ -67,12 +60,12 @@ export const PSERV_CONFIG = {
 
     // Max RAM tier we’re willing to target (GB).
     // Clamped to ns.getPurchasedServerMaxRam() at runtime.
-    maxTargetRam: 2048,
+    maxTargetRam: 20480,
 
     // Budget per purchase: we only spend up to this fraction of current cash,
     // and we always try to keep minCashReserve in the bank.
     maxSpendFraction: 0.1,       // 10% of current money per action
-    minCashReserve: 5_000_000_000,  // don’t go below this
+    minCashReserve: 1_000_000_000,  // don’t go below this
 
     // ROI constraints
     roiMaxPaybackSeconds: 1 * 60 * 60, // max acceptable payback (~1 hour)
@@ -83,7 +76,7 @@ export const PSERV_CONFIG = {
 // Configuration for batch-master.js to manage coordinated hack/grow/weaken batches
 export const BATCHER_CONFIG = {
   // fractional portion of server.moneyMax to steal per batch (0.01 = 1%)
-  hackFractionPerBatch: 0.02,
+  hackFractionPerBatch: 0.10,
 
   // timing offsets (ms) to space end-times of actions within a batch.
   // These are small delays to ensure ordering. Values tuned to be safe-ish.
@@ -97,7 +90,7 @@ export const BATCHER_CONFIG = {
 
   // safety margins
   batchSpacingMs: 400,       // minimum spacing between baseEndTimes of consecutive batches
-  maxConcurrentBatches: 4,   // max batches in flight (global)
+  maxConcurrentBatches: 8,   // max batches in flight (global)
   managerLoopMs: 3000,       // how often master wakes to plan new batches
 
   // Required scripts (paths) — ensure these match your repo.
@@ -105,7 +98,7 @@ export const BATCHER_CONFIG = {
     hack: "/scripts/hack-once.js",
     grow: "/scripts/grow-once.js",
     weaken: "/scripts/weaken-once.js",
-    timedRunner: "/scripts/timed-runner.js"
+    timedRunner: "/scripts/batch/timed-runner.js"
   },
 
   // worker selection: minimum free RAM to consider a host as worker (GB)

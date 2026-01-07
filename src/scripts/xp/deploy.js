@@ -1,11 +1,11 @@
-// scripts/deploy-xp.js
+// scripts/xp/deploy.js
 // Fill pservs (or all rooted servers) with xp-worker.js pointed at best XP target.
 
 /** @param {NS} ns */
 
 import { getBestXpTarget } from "/lib/targets.js";
 
-const XP_SCRIPT = "/scripts/xp-worker.js";
+const XP_SCRIPT = "/scripts/xp/worker.js";
 
 export async function main(ns) {
   ns.disableLog("scan");
@@ -17,9 +17,9 @@ export async function main(ns) {
   const useOnlyPservs = false; // set false if you want all rooted servers, not just pservs
 
   // 1) Pick best XP target via Formulas
-  //const xpTargetInfo = getBestXpTarget(ns);
-  //const xpTarget = xpTargetInfo?.hostname || "n00dles";
-  const xpTarget = "joesguns"; // temporarily disable Formulas use
+  const xpTargetInfo = getBestXpTarget(ns);
+  const xpTarget = xpTargetInfo?.hostname || "n00dles";
+  //const xpTarget = "joesguns"; // temporarily disable Formulas use
   ns.tprint(`[deploy-xp] Best XP target selected: ${xpTarget}`);
 
   // 2) Determine script RAM
