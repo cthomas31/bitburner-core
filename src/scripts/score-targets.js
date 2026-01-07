@@ -16,6 +16,7 @@
 import { readJSON, writeJSON } from '/lib/ns-io.js';
 import { NETWORK_FILE, TARGETS_FILE, MIN_ABSOLUTE_MONEY, MIN_RELATIVE_MONEY } from '/lib/constants.js';
 import { formatMoney, formatTime } from '/lib/util.js';
+import { computeXpScore } from '/lib/targets.js';
 
 /** @param {NS} ns */
 export async function main(ns) {
@@ -49,14 +50,17 @@ export async function main(ns) {
             score = info.moneyMax / info.minDifficulty / (cycleTime / 1000);
         }
 
+        const xpScore = computeXpScore(ns, info, ns.getPlayer());
+
         targets.push({
             host,
             score,
+            xpScore,
             currentMoney,
             currentSecurity,
             minSecurity: info.minDifficulty,
             maxMoney: info.moneyMax,
-            reqHack: info.requiredHackingSkill,
+            requiredHackingSkill: info.requiredHackingSkill,
             hackTime: info.hackTime,
             weakenTime: info.weakenTime,
             growTime: info.growTime
@@ -77,7 +81,7 @@ export async function main(ns) {
    score: $${formatMoney(t.score)} ${haveFormulas ? 'per second' : 'per security-point per second (max)'}
    money: $${formatMoney(t.currentMoney)} available of $${formatMoney(t.maxMoney)} 
    cycle: hack: ${formatTime(t.hackTime)}, weaken: ${formatTime(t.weakenTime)}, grow: ${formatTime(t.growTime)}
-   security: required: ${t.reqHack}, min: ${t.minSecurity}, current: ${t.currentSecurity.toFixed(2)}`;
+   security: required: ${t.requiredHackingSkill}, min: ${t.minSecurity}, current: ${t.currentSecurity.toFixed(2)}`;
     }
 
     const topTargets =

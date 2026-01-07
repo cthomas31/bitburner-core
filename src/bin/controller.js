@@ -1,42 +1,33 @@
+import { writeJSON, readJSON } from "/lib/ns-io";
+
 /** @param {NS} ns **/
 export async function main(ns) {
   ns.disableLog("ALL");
+  ns.enableLog("run");
   ns.tail();
 
   const CFG = {
     tickMs: 2000,
 
-    // Your scripts
+    // ---- Your existing stuff ----
     scanScore: "bin/scan-score.js",
     targetsFile: "data/targets.json",
-    pservManager: "scripts/pserv-manager.js", // requires Formulas.exe
-    gangManager: "scripts/gang/manager.js",
+    scanEveryMs: 5 * 60 * 1000,
 
     hgwOrchestrator: "scripts/hgw/orchestrator.js",
-    batchOrchestrator: "scripts/batch/orchestrator.js", // requires Formulas.exe
+    batchOrchestrator: "scripts/batch/orchestrator.js",
     xpDeploy: "scripts/xp/deploy.js",
+    gangManager: "scripts/gang/manager.js",
 
-    // How often to refresh targets.json (scan-score)
-    scanEveryMs: 5 * 60 * 1000, // 5 minutes
-
-    // Mode thresholds (tune to taste)
-    xpUntilHacking: 250,
     batchFromHacking: 800,
-
-    // Target stickiness: only switch if new target is meaningfully better
-    // Example: 1.15 means "new score must be at least +15% better"
     targetSwitchMinImprovement: 1.15,
 
-    // Install policy
-    installCooldownMs: 10 * 60 * 1000,
-    minPendingAugs: 8,
-    minMoneyForInstall: 5e9,
-    keepCashBuffer: 200e6,
+    // ---- Singularity syscalls ----
+    singDir: "data/singularity",
+    joinInvitesEveryMs: 60 * 1000,
+    ownedAugsEveryMs: 60 * 1000,
 
-    // Donation policy
-    donateFavorThreshold: 150,
-    donateMaxSpendFraction: 0.20,
-
+    // Rep grind (pick one faction)
     factionPriority: [
       "Daedalus",
       "BitRunners",
@@ -50,160 +41,457 @@ export async function main(ns) {
       "New Tokyo",
       "Ishima",
     ],
+    factionWorkType: "hacking", // good default for BN5
+
+    // Install policy (simple, safe)
+    installCooldownMs: 10 * 60 * 1000,
+    minPendingAugs: 8,
+
+    // Donations: optional toggle (requires your favor logic elsewhere; leaving OFF by default)
+    enableDonations: false,
+
+    // Aug pipeline scheduling
+    augsFromFactionEveryMs: 5 * 60 * 1000,
+    factionRepEveryMs: 30 * 1000,
+    augProbeEveryMs: 2000,          // how often to probe price/rep (one probe per tick-ish)
+    augBuyCooldownMs: 3000,         // don’t spam buys
+    maxAugSpendFraction: 0.25,      // don’t spend more than 25% of cash on one aug
+    minCashReserve: 5e8,            // keep at least $500m (tune)
   };
 
   const ctrl = {
-    lastInstallTs: 0,
-    lastWorkSig: "",
     lastScanTs: 0,
-
-    // Target/mode control
+    lastMode: null,
     lastTarget: null,
     lastTargetScore: 0,
-    lastMode: null, // "XP" | "HGW" | "BATCH"
+    lastTargetApplied: null,
 
-    // Singularity “goal”
-    currentGoal: "BOOTSTRAP",
-    targetFaction: null,
-    targetAug: null,
+    // syscall scheduling
+    syscallPid: 0,
+    lastJoinInvitesTs: 0,
+    lastOwnedAugsTs: 0,
+    lastInstallTs: 0,
+
+    // cached state from syscall results
+    pendingAugsCount: 0,
+    chosenFaction: null,
+
+    ensureBackoff: {},
+    statusMessages: [],
+
+    invites: [],
+    lastInvitesReadTs: 0,
+    lastInviteCheckTs: 0,
+
+    lastAugsFromFactionTs: 0,
+    lastFactionRepTs: 0,
+    lastAugProbeTs: 0,
+    lastAugBuyTs: 0,
+
+    factionRep: 0,
+
+    augsFromFaction: [],            // cached list
+    augCandidates: [],              // to probe price/rep
+    augFacts: {},                   // augName -> { price?, repReq?, tsPrice?, tsRep? }
+    pendingPurchase: null,          // { faction, aug }
+
   };
 
+  // Ensure results dir exists (write a noop file)
+  ns.write(`${CFG.singDir}/keep.json`, "ok", "w");
+
   while (true) {
-    const s = snapshot(ns, CFG);
-    const formulasAvailable = hasFormulas(ns);
+    const now = Date.now();
+    const hack = ns.getHackingLevel();
+    const formulas = ns.fileExists("Formulas.exe", "home");
 
-    // Keep managers alive
-    ensureIfExists(ns, CFG.pservManager, [], true); // requires Formulas.exe
-    ensureIfExists(ns, CFG.gangManager);
+    // Keep gang manager alive
+    ensureOnce(ns, ctrl, CFG.gangManager);
 
-    // Refresh targets.json periodically
-    if (ns.fileExists(CFG.scanScore, "home")) {
-      const now = Date.now();
-      if (now - ctrl.lastScanTs > CFG.scanEveryMs && !ns.isRunning(CFG.scanScore, "home")) {
-        ns.run(CFG.scanScore, 1);
-        ctrl.lastScanTs = now;
+    // Refresh targets.json periodically but only if a syscall isn't active
+    const syscallBackoffActive = Object.entries(ctrl.ensureBackoff)
+      .some(([k, t]) => k.startsWith("syscall:") && Date.now() < t);
+
+    if (!syscallBackoffActive &&
+      ns.fileExists(CFG.scanScore, "home") &&
+      now - ctrl.lastScanTs > CFG.scanEveryMs &&
+      !ns.isRunning(CFG.scanScore, "home")) {
+      ns.run(CFG.scanScore, 1);
+      ctrl.lastScanTs = now;
+    }
+
+    // ---- Hacking workload (use your existing target picking + stickiness) ----
+    const best = pickBestTarget(ns, CFG, hack);
+    const chosen = chooseStickyTarget(ns, CFG, ctrl, hack, best);
+    const target = chosen?.host ?? "n00dles";
+    const mode = pickMoneyFirstMode(hack, formulas);
+
+    // Reconcile (kill wrong) only when identity changes
+    reconcileWorkload(ns, CFG, ctrl, mode, target);
+    // Ensure desired is running every tick (retries if scan-score temporarily blocks RAM)
+    ensureDesiredRunning(ns, CFG, ctrl, mode, target, formulas);
+
+    // ---- Singularity: run at most one syscall at a time ----
+    if (ctrl.syscallPid !== 0 && ns.isRunning(ctrl.syscallPid)) {
+      // still running
+    } else {
+      ctrl.syscallPid = 0;
+
+      const P = {
+        owned: `${CFG.singDir}/owned-augs.json`,
+        augsFaction: `${CFG.singDir}/augs-from-faction.json`,
+        factionRep: `${CFG.singDir}/faction-rep.json`,
+        augPrice: `${CFG.singDir}/aug-price.json`,
+        augRep: `${CFG.singDir}/aug-rep.json`,
+        buy: `${CFG.singDir}/purchase-aug.json`,
+      };
+
+      if (ctrl.syscallPid === 0 &&
+        ctrl.chosenFaction &&
+        (now - ctrl.lastFactionRepTs > CFG.factionRepEveryMs)) {
+
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:factionRep",
+          "scripts/singularity/get-faction-rep.js",
+          [ctrl.chosenFaction, P.factionRep],
+          1000
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          ctrl.lastFactionRepTs = now;
+        }
+      }
+
+      const repObj = readJSON(ns, P.factionRep);
+      if (repObj?.ok && repObj?.faction === ctrl.chosenFaction) {
+        ctrl.factionRep = Number(repObj.rep ?? ctrl.factionRep ?? 0);
+      }
+
+      // Refresh cached owned/pending count (controller-side read)
+      ctrl.pendingAugsCount = readPendingCount(ns, P.owned, ctrl.pendingAugsCount);
+      const ownedObj = readJSON(ns, P.owned);
+      const ownedList = Array.isArray(ownedObj?.owned) ? ownedObj.owned : [];
+      const ownedSet = new Set(ownedList);
+
+      // Choose faction to focus (you already do this)
+      ctrl.chosenFaction = pickFactionToWork(ns, CFG);
+
+      // Refresh "augs from faction" occasionally
+      if (ctrl.syscallPid === 0 &&
+        ctrl.chosenFaction &&
+        (now - ctrl.lastAugsFromFactionTs > CFG.augsFromFactionEveryMs)) {
+
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:augsFromFaction",
+          "scripts/singularity/get-augs-from-faction.js",
+          [ctrl.chosenFaction, P.augsFaction],
+          1000
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          ctrl.lastAugsFromFactionTs = now; // only if pid != 0
+        }
+      }
+
+      // Update cached augsFromFaction list (controller-side read)
+      const augsObj = readJSON(ns, P.augsFaction);
+      if (augsObj?.ok && augsObj?.faction === ctrl.chosenFaction && Array.isArray(augsObj?.augs)) {
+        ctrl.augsFromFaction = augsObj.augs.slice();
+        // rebuild candidate list: those not owned
+        ctrl.augCandidates = ctrl.augsFromFaction.filter(a => !ownedSet.has(a));
+      }
+
+      // If we have a pending purchase, attempt it (80GB syscall)
+      if (ctrl.syscallPid === 0 &&
+        ctrl.pendingPurchase &&
+        (now - ctrl.lastAugBuyTs > CFG.augBuyCooldownMs)) {
+
+        const { faction, aug } = ctrl.pendingPurchase;
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:purchaseAug",
+          "scripts/singularity/purchase-aug.js",
+          [faction, aug, P.buy],
+          1500
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          ctrl.lastAugBuyTs = now;
+          ctrl.pendingPurchase = null; // optimistic; we’ll re-evaluate next tick
+        }
+      }
+
+      // Otherwise probe facts for one candidate (40GB syscalls)
+      if (ctrl.syscallPid === 0 &&
+        (now - ctrl.lastAugProbeTs > CFG.augProbeEveryMs) &&
+        ctrl.augCandidates?.length) {
+
+        // pick first candidate missing facts
+        const aug = ctrl.augCandidates.find(a => !haveAugFacts(ctrl, a));
+        if (aug) {
+          ctrl.augFacts ??= {};
+          ctrl.augFacts[aug] ??= {};
+
+          // alternate price/rep probes to avoid doing both in same tick
+          const f = ctrl.augFacts[aug];
+          const needPrice = !Number.isFinite(f.price);
+          const needRep = !Number.isFinite(f.repReq);
+
+          let pid = 0;
+          if (needPrice) {
+            pid = trySyscall(ns, ctrl, `syscall:price:${aug}`, "scripts/singularity/get-aug-price.js", [aug, P.augPrice], 1000);
+          } else if (needRep) {
+            pid = trySyscall(ns, ctrl, `syscall:rep:${aug}`, "scripts/singularity/get-aug-rep.js", [aug, P.augRep], 1000);
+          }
+
+          if (pid !== 0) {
+            ctrl.syscallPid = pid;
+            ctrl.lastAugProbeTs = now;
+          }
+        } else {
+          // all facts known → decide what to buy
+          const cash = ns.getPlayer().money;
+          const spendCap = Math.max(0, cash * CFG.maxAugSpendFraction);
+          const reserve = CFG.minCashReserve;
+
+          // Build purchasable list (by facts only; rep check comes later if you add getFactionRep)
+          const known = ctrl.augCandidates
+            .filter(a => haveAugFacts(ctrl, a))
+            .map(a => ({ aug: a, price: ctrl.augFacts[a].price, repReq: ctrl.augFacts[a].repReq }))
+            .sort((a, b) => a.price - b.price);
+
+          // We can’t check actual faction rep without a separate 16GB syscall (getFactionRep),
+          // so for now we buy only when you *know* you have rep (or you add that syscall next).
+          // Practical hack: buy the cheapest ones first after some grinding time, and let purchase fail if no rep.
+          const choice = known.find(x => x.price <= spendCap && (cash - x.price) >= reserve);
+
+          if (choice && ctrl.chosenFaction) {
+            ctrl.pendingPurchase = { faction: ctrl.chosenFaction, aug: choice.aug };
+          }
+        }
+      }
+
+      // Apply results of last probes (controller-side read)
+      const priceObj = readJSON(ns, P.augPrice);
+      if (priceObj?.ok && priceObj?.aug) {
+        ctrl.augFacts ??= {};
+        ctrl.augFacts[priceObj.aug] ??= {};
+        ctrl.augFacts[priceObj.aug].price = clampNumber(priceObj.price, undefined);
+      }
+
+      const repObj = readJSON(ns, P.augRep);
+      if (repObj?.ok && repObj?.aug) {
+        ctrl.augFacts ??= {};
+        ctrl.augFacts[repObj.aug] ??= {};
+        ctrl.augFacts[repObj.aug].repReq = clampNumber(repObj.repReq, undefined);
+      }
+
+      // Load invites list occasionally (controller-side, no Singularity)
+      ctrl.invites = readInvites(ns, `${CFG.singDir}/invites.json`, ctrl.invites);
+
+      const nextFaction = ctrl.invites?.[0];
+      if (nextFaction) {
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:joinFaction",
+          "scripts/singularity/join-faction.js",
+          [nextFaction, `${CFG.singDir}/join-faction.json`],
+          1000
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          // optimistic: pop it so we don't spam the same faction
+          ctrl.invites.shift();
+          // persist trimmed list so restart doesn't redo
+          await writeJSON(ns, `${CFG.singDir}/invites.json`, { ts: Date.now(), invites: ctrl.invites });
+        }
+      } else {
+        // fallback: work for faction like before
+        ctrl.chosenFaction = pickFactionToWork(ns, CFG);
+        if (ctrl.chosenFaction) {
+          const pid = trySyscall(
+            ns, ctrl,
+            "syscall:workFaction",
+            "scripts/singularity/work-faction.js",
+            [ctrl.chosenFaction, CFG.factionWorkType, false, `${CFG.singDir}/work-faction.json`],
+            1000
+          );
+          if (pid !== 0) ctrl.syscallPid = pid;
+        }
+      }
+
+      // 1) join invites periodically
+      if (now - ctrl.lastJoinInvitesTs > CFG.joinInvitesEveryMs) {
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:checkInvites",
+          "scripts/singularity/check-invites.js",
+          [`${CFG.singDir}/invites.json`],
+          1000
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          ctrl.lastJoinInvitesTs = now; // only on success
+        }
+      }
+
+      // 2) refresh pending aug count periodically
+      else if (now - ctrl.lastOwnedAugsTs > CFG.ownedAugsEveryMs) {
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:ownedAugs",
+          "scripts/singularity/get-owned-augs.js",
+          [`${CFG.singDir}/owned-augs.json`],
+          1000
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          ctrl.lastOwnedAugsTs = now; // only on success
+        }
+        else logSyscallFailure(ns, ctrl, "get-owned-augs.js");
+      }
+
+      // 3) work for faction (keep trying if we have one)
+      else {
+        ctrl.chosenFaction = pickFactionToWork(ns, CFG);
+        if (ctrl.chosenFaction) {
+          const pid = trySyscall(
+            ns, ctrl,
+            "syscall:workFaction",
+            "scripts/singularity/work-faction.js",
+            [ctrl.chosenFaction, CFG.factionWorkType, false, `${CFG.singDir}/work-faction.json`],
+            1000
+          );
+          if (pid !== 0) {
+            ctrl.syscallPid = pid
+          } else logSyscallFailure(ns, ctrl, "work-faction.js");
+        }
+      }
+
+      // 4) install (only if no other syscall launched)
+      ctrl.pendingAugsCount = readPendingCount(ns, `${CFG.singDir}/owned-augs.json`, ctrl.pendingAugsCount);
+
+      const canInstall =
+        ctrl.pendingAugsCount >= CFG.minPendingAugs &&
+        (now - ctrl.lastInstallTs) > CFG.installCooldownMs;
+
+      if (canInstall && ctrl.syscallPid === 0) {
+        const pid = trySyscall(
+          ns, ctrl,
+          "syscall:install",
+          "scripts/singularity/install.js",
+          ["bootstrap.js", `${CFG.singDir}/install.json`],
+          2000
+        );
+        if (pid !== 0) {
+          ctrl.syscallPid = pid;
+          ctrl.lastInstallTs = now; // only on success
+        }
+        else logSyscallFailure(ns, ctrl, "install.js");
       }
     }
 
-    // Decide Singularity goal
-    const decision = chooseGoal(ns, CFG, ctrl, s);
-    ctrl.currentGoal = decision.goal;
-    ctrl.targetFaction = decision.targetFaction ?? null;
-    ctrl.targetAug = decision.targetAug ?? null;
 
-    // Decide target + apply stickiness
-    const best = pickBestTarget(ns, CFG, s); // {host, score} | null
-    const chosen = chooseStickyTarget(ns, CFG, ctrl, s, best);
-    const target = chosen?.host ?? "n00dles";
-
-    // Decide mode and run orchestrators accordingly
-    const mode = pickMode(CFG, s, target, formulasAvailable);
-    applyHackingMode(ns, CFG, ctrl, mode, target);
-
-    // Execute Singularity actions
-    await actSingularity(ns, CFG, ctrl, s);
-
-    render(ns, ctrl, s, mode, target, formulasAvailable, best);
+    // ---- UI ----
+    ns.clearLog();
+    ns.print(`Mode: ${mode} | Target: ${target}`);
+    if (best) ns.print(`BestNow: ${best.host} (${best.score.toFixed(2)}) | Sticky: ${ctrl.lastTarget} (${(ctrl.lastTargetScore || 0).toFixed(2)})`);
+    ns.print(`Hack: ${hack} | Formulas.exe: ${formulas ? "YES" : "NO"}`);
+    ns.print(`PendingAugs: ${ctrl.pendingAugsCount} | InstallCooldown: ${Math.max(0, Math.floor((CFG.installCooldownMs - (now - ctrl.lastInstallTs)) / 1000))}s`);
+    ns.print(`FactionWork: ${ctrl.chosenFaction ?? "(none)"}`);
+    ns.print(`Syscall: ${ctrl.syscallPid ? `PID ${ctrl.syscallPid}` : "idle"}`);
+    ns.print(`scan-score: ${ns.isRunning(CFG.scanScore, "home") ? "RUNNING" : "idle"}`);
+    for (const msg of ctrl.statusMessages) ns.print(`* ${msg}`);
 
     await ns.sleep(CFG.tickMs);
   }
 }
 
-/* ---------------- Snapshot ---------------- */
+function freeRam(ns, host = "home") {
+  return ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
+}
 
-function snapshot(ns, CFG) {
-  const player = ns.getPlayer();
-  const money = player.money;
+function logSyscallFailure(ns, ctrl, script) {
+  const free = freeRam(ns, "home");
+  const message = `Syscall failed (${script}) freeRam=${free.toFixed(1)}GB`;
+  ctrl.statusMessages.push(message);
+}
 
-  const invitations = ns.singularity.checkFactionInvitations();
-  const factions = player.factions ?? [];
+/* ---------------- Workload logic ---------------- */
 
-  const factionInfo = {};
-  for (const f of factions) {
-    factionInfo[f] = {
-      rep: ns.singularity.getFactionRep(f),
-      favor: ns.singularity.getFactionFavor(f),
-      canDonate: ns.singularity.getFactionFavor(f) >= CFG.donateFavorThreshold,
-    };
+function pickMoneyFirstMode(hackLevel, formulas) {
+  // cash-first: HGW until batching becomes worthwhile
+  if (hackLevel >= 800) return formulas ? "BATCH" : "HGW";
+  return "HGW";
+}
+
+function reconcileWorkload(ns, CFG, ctrl, mode, target) {
+  const changed = (ctrl.lastMode !== mode) || (ctrl.lastTargetApplied !== target);
+  if (!changed) return;
+
+  kill(ns, CFG.hgwOrchestrator);
+  kill(ns, CFG.batchOrchestrator);
+  kill(ns, CFG.xpDeploy);
+
+  ctrl.lastMode = mode;
+  ctrl.lastTargetApplied = target;
+
+  // Clear ensure backoff so we retry immediately
+  ctrl.ensureBackoff = {};
+}
+
+function ensureDesiredRunning(ns, CFG, ctrl, mode, target, formulas) {
+  if (mode === "HGW") {
+    ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [target]);
+  } else if (mode === "BATCH") {
+    if (formulas) ensureOnce(ns, ctrl, CFG.batchOrchestrator, [target]);
+    else ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [target]);
+  } else if (mode === "XP") {
+    ensureOnce(ns, ctrl, CFG.xpDeploy);
+  }
+}
+
+function ensureOnce(ns, ctrl, script, args = [], retryMs = 500) {
+  if (!ns.fileExists(script, "home")) return;
+
+  const key = `${script} ${JSON.stringify(args)}`;
+  const now = Date.now();
+  const nextOk = ctrl.ensureBackoff?.[key] ?? 0;
+  if (now < nextOk) return;
+
+  if (ns.isRunning(script, "home", ...args)) {
+    delete ctrl.ensureBackoff[key];
+    return;
   }
 
-  const installedAugs = new Set(ns.singularity.getOwnedAugmentations(true));
-  const ownedAugs = new Set(ns.singularity.getOwnedAugmentations(false));
-  const pendingAugs = [...ownedAugs].filter(a => !installedAugs.has(a));
-
-  const purchasable = [];
-  for (const f of factions) {
-    const augs = ns.singularity.getAugmentationsFromFaction(f);
-    for (const aug of augs) {
-      if (ownedAugs.has(aug)) continue;
-      const repReq = ns.singularity.getAugmentationRepReq(aug);
-      const price = ns.singularity.getAugmentationPrice(aug);
-      purchasable.push({ faction: f, aug, repReq, price });
-    }
+  const pid = ns.run(script, 1, ...args);
+  if (pid === 0) {
+    ctrl.ensureBackoff[key] = now + retryMs;
+  } else {
+    delete ctrl.ensureBackoff[key];
   }
-
-  const currentWork = ns.singularity.getCurrentWork();
-  const programs = new Set(ns.ls("home", ".exe"));
-
-  return {
-    player,
-    money,
-    invitations,
-    factions,
-    factionInfo,
-    installedAugs,
-    ownedAugs,
-    pendingAugs,
-    purchasable,
-    currentWork,
-    programs,
-  };
 }
 
-/* ---------------- Script helpers ---------------- */
-
-function hasFormulas(ns) {
-  return ns.fileExists("Formulas.exe", "home");
-}
-
-function ensureIfExists(ns, script, args = [], requireFormulas = false) {
-  if (!ns.fileExists(script, "home")) return;
-  if (requireFormulas && !hasFormulas(ns)) return;
-  if (ns.isRunning(script, "home", ...args)) return;
-  ns.run(script, 1, ...args);
-}
-
-function killIfRunning(ns, script) {
-  if (!ns.fileExists(script, "home")) return;
-  if (ns.isRunning(script, "home")) ns.kill(script, "home");
+function kill(ns, script) {
+  if (ns.fileExists(script, "home") && ns.isRunning(script, "home")) ns.kill(script, "home");
 }
 
 /* ---------------- Targeting ---------------- */
 
-/**
- * Read data/targets.json (array of {host, score, reqHack, maxMoney, ...})
- * and return the best usable target {host, score}.
- */
-function pickBestTarget(ns, CFG, s) {
+function pickBestTarget(ns, CFG, hackLevel) {
   if (!ns.fileExists(CFG.targetsFile, "home")) return null;
-
   try {
-    const raw = ns.read(CFG.targetsFile);
-    if (!raw) return null;
-
-    const rows = JSON.parse(raw);
+    const rows = JSON.parse(ns.read(CFG.targetsFile));
     if (!Array.isArray(rows)) return null;
-
-    const hack = s.player.skills.hacking;
-
     const usable = rows
       .filter(r => r && typeof r.host === "string")
       .filter(r => ns.serverExists(r.host))
       .filter(r => ns.hasRootAccess(r.host))
-      .filter(r => (r.reqHack ?? ns.getServerRequiredHackingLevel(r.host)) <= hack)
+      .filter(r => (r.reqHack ?? ns.getServerRequiredHackingLevel(r.host)) <= hackLevel)
       .filter(r => (r.maxMoney ?? ns.getServerMaxMoney(r.host)) > 0)
       .map(r => ({ host: r.host, score: Number(r.score ?? 0) }));
-
     usable.sort((a, b) => b.score - a.score);
     return usable[0] ?? null;
   } catch {
@@ -211,290 +499,130 @@ function pickBestTarget(ns, CFG, s) {
   }
 }
 
-/**
- * Apply target stickiness:
- * - Keep current target unless it becomes invalid
- * - Switch only if best.score >= current.score * targetSwitchMinImprovement
- */
-function chooseStickyTarget(ns, CFG, ctrl, s, best) {
-  const current = ctrl.lastTarget;
+function chooseStickyTarget(ns, CFG, ctrl, hackLevel, best) {
+  const cur = ctrl.lastTarget;
 
-  // No best target available => keep current if still valid
-  if (!best) {
-    if (current && isTargetStillValid(ns, s, current)) {
-      return { host: current, score: ctrl.lastTargetScore || 0 };
-    }
-    ctrl.lastTarget = null;
-    ctrl.lastTargetScore = 0;
-    return null;
-  }
+  if (!best) return cur ? { host: cur, score: ctrl.lastTargetScore || 0 } : null;
 
-  // If we have no current, take best
-  if (!current) {
+  if (!cur) {
     ctrl.lastTarget = best.host;
     ctrl.lastTargetScore = best.score;
     return best;
   }
 
-  // If current becomes invalid, switch immediately
-  if (!isTargetStillValid(ns, s, current)) {
+  if (!isValid(ns, cur, hackLevel)) {
     ctrl.lastTarget = best.host;
     ctrl.lastTargetScore = best.score;
     return best;
   }
 
-  const currentScore = ctrl.lastTargetScore || 0;
-
-  // If score info is missing/zero, behave conservatively: switch to best
-  if (currentScore <= 0) {
+  const curScore = ctrl.lastTargetScore || 0;
+  if (curScore <= 0) {
     ctrl.lastTarget = best.host;
     ctrl.lastTargetScore = best.score;
     return best;
   }
 
-  // If best isn't materially better, keep current
-  const threshold = currentScore * CFG.targetSwitchMinImprovement;
-  if (best.host !== current && best.score >= threshold) {
+  if (best.host !== cur && best.score >= curScore * 1.15) {
     ctrl.lastTarget = best.host;
     ctrl.lastTargetScore = best.score;
     return best;
   }
 
-  // Keep current
-  return { host: current, score: currentScore };
+  return { host: cur, score: curScore };
 }
 
-function isTargetStillValid(ns, s, host) {
-  if (!ns.serverExists(host)) return false;
-  if (!ns.hasRootAccess(host)) return false;
-  if (ns.getServerMaxMoney(host) <= 0) return false;
-  if (ns.getServerRequiredHackingLevel(host) > s.player.skills.hacking) return false;
-  return true;
+function isValid(ns, host, hackLevel) {
+  return ns.serverExists(host)
+    && ns.hasRootAccess(host)
+    && ns.getServerMaxMoney(host) > 0
+    && ns.getServerRequiredHackingLevel(host) <= hackLevel;
 }
 
-/* ---------------- Mode selection ---------------- */
+/* ---------------- Singularity helpers (controller-side, no singularity API) ---------------- */
 
-function pickMode(CFG, s, target, formulasAvailable) {
-  const h = s.player.skills.hacking;
+function isDesiredAugName(name) {
+  const s = String(name).toLowerCase();
 
-  if (h < CFG.xpUntilHacking) return "XP";
-  if (h >= CFG.batchFromHacking) return formulasAvailable ? "BATCH" : "HGW";
-  return "HGW";
+  // Hacking-ish vibes
+  const hackingHit =
+    s.includes("hack") ||
+    s.includes("neuro") ||          // common prefix in hacking augs
+    s.includes("synaptic") ||
+    s.includes("bitwire") ||
+    s.includes("cranial") ||
+    s.includes("datajack") ||
+    s.includes("c.r.t") ||
+    s.includes("cognitive") ||
+    s.includes("neural") ||
+    s.includes("algorithm");
+
+  // Charisma-ish vibes
+  const chaHit =
+    s.includes("charisma") ||
+    s.includes("social") ||
+    s.includes("negotiation") ||
+    s.includes("speech") ||
+    s.includes("persuasion") ||
+    s.includes("presence") ||
+    s.includes("empathy");
+
+  return hackingHit || chaHit;
 }
 
-function applyHackingMode(ns, CFG, ctrl, mode, target) {
-  const changed = (ctrl.lastMode !== mode) || (ctrl.lastTargetApplied !== target);
-  if (!changed) return;
-
-  // Stop competing orchestrators on home
-  killIfRunning(ns, CFG.hgwOrchestrator);
-  killIfRunning(ns, CFG.batchOrchestrator);
-  if (ctrl.lastMode === "XP" || mode === "XP") killIfRunning(ns, CFG.xpDeploy);
-
-  // Start selected mode
-  if (mode === "XP") {
-    ensureIfExists(ns, CFG.xpDeploy);
-  } else if (mode === "HGW") {
-    ensureIfExists(ns, CFG.hgwOrchestrator, [target]);
-  } else if (mode === "BATCH") {
-    ensureIfExists(ns, CFG.batchOrchestrator, [target], true); // requires Formulas.exe
+function readInvites(ns, path, fallback) {
+  try {
+    if (!ns.fileExists(path, "home")) return fallback;
+    const obj = JSON.parse(ns.read(path));
+    if (Array.isArray(obj?.invites)) return obj.invites.slice();
+    return fallback;
+  } catch {
+    return fallback;
   }
-
-  ctrl.lastMode = mode;
-  ctrl.lastTargetApplied = target;
 }
 
-/* ---------------- Singularity decisioning ---------------- */
+function clampNumber(x, fallback = 0) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : fallback;
+}
 
-function chooseGoal(ns, CFG, ctrl, s) {
-  // 1) Join invites immediately
-  if (s.invitations.length > 0) return { goal: "JOIN_FACTIONS" };
+function haveAugFacts(ctrl, aug) {
+  const f = ctrl.augFacts?.[aug];
+  return f && Number.isFinite(f.price) && Number.isFinite(f.repReq);
+}
 
-  // 2) Daedalus + Red Pill hard-priority
-  const hasDaedalus = s.factions.includes("Daedalus");
-  const needsRedPill = !s.ownedAugs.has("The Red Pill") && !s.installedAugs.has("The Red Pill");
-  if (hasDaedalus && needsRedPill) {
-    const rp = s.purchasable.find(x => x.aug === "The Red Pill" && x.faction === "Daedalus");
-    if (rp) {
-      const haveRep = s.factionInfo["Daedalus"]?.rep ?? 0;
-      if (haveRep >= rp.repReq && s.money >= rp.price) {
-        return { goal: "BUY_AUGS", targetFaction: "Daedalus", targetAug: "The Red Pill" };
-      }
-    }
-    return { goal: "FARM_REP", targetFaction: "Daedalus", targetAug: "The Red Pill" };
+function pickFactionToWork(ns, CFG) {
+  // We can read player factions without Singularity
+  const factions = ns.getPlayer().factions ?? [];
+  for (const f of CFG.factionPriority) if (factions.includes(f)) return f;
+  return factions[0] ?? null;
+}
+
+function readPendingCount(ns, path, fallback) {
+  try {
+    if (!ns.fileExists(path, "home")) return fallback;
+    const obj = JSON.parse(ns.read(path));
+    if (typeof obj?.pendingCount === "number") return obj.pendingCount;
+    if (Array.isArray(obj?.pending)) return obj.pending.length;
+    return fallback;
+  } catch {
+    return fallback;
   }
-
-  // 3) Buy augs we can buy now
-  const bestBuy = pickBestAffordableAug(ns, CFG, s);
-  if (bestBuy) return { goal: "BUY_AUGS", targetFaction: bestBuy.faction, targetAug: bestBuy.aug };
-
-  // 4) Install check
-  if (shouldInstall(CFG, ctrl, s)) return { goal: "INSTALL" };
-
-  // 5) Farm rep for best next aug
-  const bestRep = pickBestRepTarget(ns, CFG, s);
-  if (bestRep) return { goal: "FARM_REP", targetFaction: bestRep.faction, targetAug: bestRep.aug };
-
-  // 6) Idle INT
-  return { goal: "IDLE_INT" };
 }
 
-function shouldInstall(CFG, ctrl, s) {
-  if (s.pendingAugs.length === 0) return false;
+function trySyscall(ns, ctrl, key, script, args = [], retryMs = 1000) {
+  if (!ns.fileExists(script, "home")) return 0;
+
   const now = Date.now();
-  if (now - ctrl.lastInstallTs < CFG.installCooldownMs) return false;
-  if (s.pendingAugs.length >= CFG.minPendingAugs) return true;
-  if (s.money >= CFG.minMoneyForInstall) return true;
-  return false;
-}
+  const nextOk = ctrl.ensureBackoff?.[key] ?? 0;
+  if (now < nextOk) return 0;
 
-function pickBestAffordableAug(ns, CFG, s) {
-  const candidates = [];
-  for (const x of s.purchasable) {
-    const rep = s.factionInfo[x.faction]?.rep ?? 0;
-    if (rep < x.repReq) continue;
-    if (s.money - CFG.keepCashBuffer < x.price) continue;
-    const score = scoreAug(x.aug);
-    candidates.push({ ...x, score: score / Math.log10(x.price + 10) });
-  }
-  candidates.sort((a, b) => b.score - a.score);
-  return candidates[0] ?? null;
-}
-
-function pickBestRepTarget(ns, CFG, s) {
-  const candidates = [];
-  for (const x of s.purchasable) {
-    const rep = s.factionInfo[x.faction]?.rep ?? 0;
-    if (rep >= x.repReq) continue;
-    const deficit = x.repReq - rep;
-    const canDonate = s.factionInfo[x.faction]?.canDonate ?? false;
-    const base = scoreAug(x.aug);
-    const score = (canDonate ? base * 1.2 : base) / (deficit + 1);
-    candidates.push({ ...x, deficit, score });
-  }
-  candidates.sort((a, b) => b.score - a.score);
-  return candidates[0] ?? null;
-}
-
-// v1 scoring: heuristic by name + Red Pill override
-function scoreAug(name) {
-  if (name === "The Red Pill") return 1e9;
-  let s = 1;
-  if (/Neuro|Cranial|Neural|Synaptic|Hack|Data|BitWire/i.test(name)) s += 3;
-  if (/Cash|Money|Market|Sales|Business/i.test(name)) s += 1;
-  if (/Combat|Blade|Strength|Defense|Dex|Agility/i.test(name)) s += 0.5;
-  return s;
-}
-
-/* ---------------- Singularity actions ---------------- */
-
-async function actSingularity(ns, CFG, ctrl, s) {
-  switch (ctrl.currentGoal) {
-    case "JOIN_FACTIONS": {
-      for (const f of s.invitations) ns.singularity.joinFaction(f);
-      return;
-    }
-
-    case "BUY_AUGS": {
-      if (ctrl.targetFaction && ctrl.targetAug) {
-        ns.singularity.purchaseAugmentation(ctrl.targetFaction, ctrl.targetAug);
-      }
-
-      while (true) {
-        const ss = snapshot(ns, CFG);
-        const best = pickBestAffordableAug(ns, CFG, ss);
-        if (!best) break;
-        const ok = ns.singularity.purchaseAugmentation(best.faction, best.aug);
-        if (!ok) break;
-        await ns.sleep(10);
-      }
-      return;
-    }
-
-    case "FARM_REP": {
-      const faction = ctrl.targetFaction ?? pickFallbackFaction(CFG, s);
-      if (!faction) return;
-
-      const finfo = s.factionInfo[faction];
-      if (finfo?.canDonate && ctrl.targetAug && s.money > 1e9) {
-        const req = ns.singularity.getAugmentationRepReq(ctrl.targetAug);
-        const rep = finfo.rep;
-        if (rep < req) {
-          const donateAmt = Math.min(s.money * CFG.donateMaxSpendFraction, 5e9);
-          ns.singularity.donateToFaction(faction, donateAmt);
-          return;
-        }
-      }
-
-      startFactionWorkDebounced(ns, ctrl, faction, "hacking");
-      return;
-    }
-
-    case "INSTALL": {
-      ctrl.lastInstallTs = Date.now();
-      ns.singularity.installAugmentations("bin/bootstrap.js");
-      return;
-    }
-
-    case "IDLE_INT": {
-      const faction = pickFallbackFaction(CFG, s);
-      if (!faction) return;
-      startFactionWorkDebounced(ns, ctrl, faction, "hacking");
-      return;
-    }
-
-    default:
-      return;
-  }
-}
-
-function pickFallbackFaction(CFG, s) {
-  for (const f of CFG.factionPriority) if (s.factions.includes(f)) return f;
-  return s.factions[0] ?? null;
-}
-
-function startFactionWorkDebounced(ns, ctrl, faction, workType) {
-  const sig = `faction:${faction}:${workType}`;
-  if (ctrl.lastWorkSig === sig) return;
-
-  const cw = ns.singularity.getCurrentWork();
-  if (cw && cw.type === "FACTION" && cw.factionName === faction && cw.factionWorkType === workType) {
-    ctrl.lastWorkSig = sig;
-    return;
+  const pid = ns.run(script, 1, ...args);
+  if (pid === 0) {
+    ctrl.ensureBackoff[key] = now + retryMs;
+    return 0;
   }
 
-  const ok = ns.singularity.workForFaction(faction, workType, false);
-  if (ok) ctrl.lastWorkSig = sig;
-}
-
-/* ---------------- UI ---------------- */
-
-function render(ns, ctrl, s, mode, target, formulasAvailable, best) {
-  const lines = [];
-  lines.push(
-    `Goal: ${ctrl.currentGoal}` +
-    (ctrl.targetFaction ? ` | faction=${ctrl.targetFaction}` : "") +
-    (ctrl.targetAug ? ` | aug=${ctrl.targetAug}` : "")
-  );
-  lines.push(`Mode: ${mode} | Target: ${target}`);
-  if (best) lines.push(`BestTargetNow: ${best.host} (score=${best.score.toFixed(2)}) | Sticky: ${ctrl.lastTarget} (score=${(ctrl.lastTargetScore || 0).toFixed(2)})`);
-  lines.push(`Money: ${fmt(s.money)} | Hack: ${s.player.skills.hacking} | INT: ${s.player.intelligence ?? 0}`);
-  lines.push(`Factions: ${s.factions.length} | Invites: ${s.invitations.length} | PendingAugs: ${s.pendingAugs.length}`);
-  lines.push(`Formulas.exe: ${formulasAvailable ? "YES" : "NO (batch+pserv disabled)"}`);
-  lines.push(`scan-score: ${ns.isRunning("bin/scan-score.js", "home") ? "RUNNING" : "idle"}`);
-
-  const w = s.currentWork ? JSON.stringify(s.currentWork) : "(none)";
-  lines.push(`Work: ${w}`);
-
-  ns.clearLog();
-  for (const l of lines) ns.print(l);
-}
-
-function fmt(n) {
-  const a = Math.abs(n);
-  if (a >= 1e12) return `${(n / 1e12).toFixed(2)}t`;
-  if (a >= 1e9) return `${(n / 1e9).toFixed(2)}b`;
-  if (a >= 1e6) return `${(n / 1e6).toFixed(2)}m`;
-  if (a >= 1e3) return `${(n / 1e3).toFixed(2)}k`;
-  return `${n.toFixed(0)}`;
+  delete ctrl.ensureBackoff[key];
+  return pid;
 }

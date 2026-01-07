@@ -24,7 +24,7 @@ export async function getBestTarget(ns, mode = "money") {
     ns.tprint(`Evaluating ${targets.length} targets for best ${mode} target at hacking level ${level}`);
 
     // targets: { hostname, scoreMoney, scoreXp, ... }
-    const sorted = [...targets].filter(t => t.reqHack <= level);
+    const sorted = [...targets].filter(t => t.requiredHackingSkill <= level);
 
     if (mode === "xp") {
         sorted.sort((a, b) => b.scoreXp - a.scoreXp);
@@ -116,4 +116,16 @@ export function getBestXpTarget(ns) {
   ns.print(`[getBestXpTarget] Best XP target: ${best.hostname} | ` +
            `xp/s=${best.score.toFixed(2)} | t=${ns.tFormat(best.hackTime)}`);
   return best;
+}
+
+export function computeXpScore(ns, server, player) {
+  const haveFormulas = ns.formulas && ns.formulas.hacking;
+  if (!haveFormulas) {
+    // Fallback heuristic: XP score proportional to required hacking level
+    return 1 / server.hackTime;
+  }
+  
+  const xp = ns.formulas.hacking.hackExp(server, player);
+  const time = ns.formulas.hacking.hackTime(server, player);
+  return xp / (time / 1000);
 }

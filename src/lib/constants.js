@@ -12,7 +12,7 @@ export const NETWORK_FILE = "/data/network.json";
 export const TARGETS_FILE = "/data/targets.json";
 
 // Home reserved RAM to ensure smooth operation of other tasks.
-export const HOME_RESERVED_RAM = 20;
+export const HOME_RESERVED_RAM = 128;
 
 export const HACK_CONFIG = {
     // Fraction of a server's maximum money to aim for before hacking.

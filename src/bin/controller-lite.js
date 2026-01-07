@@ -15,7 +15,7 @@ export async function main(ns) {
 
     gangManager: "scripts/gang/manager.js",
 
-    xpUntilHacking: 250,
+    xpUntilHacking: 150,
     batchFromHacking: 800,
     targetSwitchMinImprovement: 1.15,
   };
@@ -26,11 +26,13 @@ export async function main(ns) {
     lastTarget: null,
     lastTargetScore: 0,
     lastTargetApplied: null,
+    desired: {mode: null, target: null},
+    ensureBackoff: {},
   };
 
   while (true) {
     // keep gang running (no Singularity needed)
-    ensure(ns, CFG.gangManager);
+    //ensure(ns, ctrl, CFG.gangManager);
 
     // refresh targets.json periodically
     const now = Date.now();
@@ -47,7 +49,10 @@ export async function main(ns) {
     const target = chosen?.host ?? "n00dles";
 
     const mode = pickMode(CFG, hack, formulas);
-    applyMode(ns, CFG, ctrl, mode, target, formulas);
+    setDesired(ns, CFG, ctrl, mode, target, formulas);
+    reconcileWorkload(ns, CFG, ctrl);
+    ensureDesiredRunning(ns, CFG, ctrl, formulas);
+
 
     ns.clearLog();
     ns.print(`Mode: ${mode} | Target: ${target}`);
@@ -58,10 +63,29 @@ export async function main(ns) {
   }
 }
 
-function ensure(ns, script, args = []) {
+function ensureOnce(ns, ctrl, script, args = [], retryMs = 500) {
   if (!ns.fileExists(script, "home")) return;
-  if (ns.isRunning(script, "home", ...args)) return;
-  ns.run(script, 1, ...args);
+
+  const key = `${script} ${JSON.stringify(args)}`;
+  const now = Date.now();
+
+  const nextOk = ctrl.ensureBackoff?.[key] ?? 0;
+  if (now < nextOk) return;
+
+  if (ns.isRunning(script, "home", ...args)) {
+    // If it's running, clear backoff
+    if (ctrl.ensureBackoff) delete ctrl.ensureBackoff[key];
+    return;
+  }
+
+  const pid = ns.run(script, 1, ...args);
+  if (pid === 0) {
+    // probably not enough RAM right now; try again soon
+    ctrl.ensureBackoff ??= {};
+    ctrl.ensureBackoff[key] = now + retryMs;
+  } else {
+    if (ctrl.ensureBackoff) delete ctrl.ensureBackoff[key];
+  }
 }
 
 function pickBestTarget(ns, CFG, hackLevel) {
@@ -73,7 +97,7 @@ function pickBestTarget(ns, CFG, hackLevel) {
       .filter(r => r && typeof r.host === "string")
       .filter(r => ns.serverExists(r.host))
       .filter(r => ns.hasRootAccess(r.host))
-      .filter(r => (r.reqHack ?? ns.getServerRequiredHackingLevel(r.host)) <= hackLevel)
+      .filter(r => (r.requiredHackingSkill ?? ns.getServerRequiredHackingLevel(r.host)) <= hackLevel)
       .filter(r => (r.maxMoney ?? ns.getServerMaxMoney(r.host)) > 0)
       .map(r => ({ host: r.host, score: Number(r.score ?? 0) }));
     usable.sort((a, b) => b.score - a.score);
@@ -123,10 +147,28 @@ function isValid(ns, host, hackLevel) {
     && ns.getServerRequiredHackingLevel(host) <= hackLevel;
 }
 
-function pickMode(CFG, hackLevel, formulas) {
-  if (hackLevel < CFG.xpUntilHacking) return "XP";
+function pickMode(CFG, hackLevel, formulas, bestUsable, bestLocked) {
+  // Late-game: batch if available
   if (hackLevel >= CFG.batchFromHacking) return formulas ? "BATCH" : "HGW";
-  return "HGW";
+
+  // Default: money mode (HGW)
+  let mode = "HGW";
+
+  // Opportunistic XP: only if it unlocks a meaningfully better target soon
+  if (bestLocked) {
+    const delta = bestLocked.reqHack - hackLevel;
+    const unlockSoon = delta <= CFG.xpUnlockWindowLevels; // e.g. 50
+    const currentScore = bestUsable?.score ?? 0;
+    const lockedScore = bestLocked.score ?? 0;
+
+    // "Meaningfully better": e.g. >= 1.25x better score
+    const betterEnough =
+      currentScore <= 0 ? true : (lockedScore >= currentScore * CFG.xpUnlockMinImprovement);
+
+    if (unlockSoon && betterEnough) mode = "XP";
+  }
+
+  return mode;
 }
 
 function applyMode(ns, CFG, ctrl, mode, target, formulas) {
@@ -139,16 +181,66 @@ function applyMode(ns, CFG, ctrl, mode, target, formulas) {
   if (ctrl.lastMode === "XP" || mode === "XP") kill(ns, CFG.xpDeploy);
 
   if (mode === "XP") {
-    ensure(ns, CFG.xpDeploy);
+    ensureOnce(ns, ctrl, CFG.xpDeploy);
   } else if (mode === "HGW") {
-    ensure(ns, CFG.hgwOrchestrator, [target]);
+    ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [target]);
   } else if (mode === "BATCH") {
-    if (formulas) ensure(ns, CFG.batchOrchestrator, [target]);
-    else ensure(ns, CFG.hgwOrchestrator, [target]);
+    if (formulas) {
+      ensureOnce(ns, ctrl, CFG.batchOrchestrator, [target]);
+    } else {
+      ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [target]);
+    }
   }
 
   ctrl.lastMode = mode;
   ctrl.lastTargetApplied = target;
+}
+
+function setDesired(ns, CFG, ctrl, mode, target, formulas) {
+  // If batch requested but formulas missing, degrade to HGW
+  if (mode === "BATCH" && !formulas) mode = "HGW";
+
+  ctrl.desired = { mode, target };
+}
+
+function reconcileWorkload(ns, CFG, ctrl) {
+  const d = ctrl.desired;
+  const c = ctrl.current ?? { mode: null, target: null };
+
+  const changed = c.mode !== d.mode || c.target !== d.target;
+  if (!changed) return;
+
+  // Something about the desired workload changed → stop old orchestrators
+  kill(ns, CFG.hgwOrchestrator);
+  kill(ns, CFG.batchOrchestrator);
+  kill(ns, CFG.xpDeploy);
+
+  // Update current to desired; actual start happens in ensureDesiredRunning()
+  ctrl.current = { ...d };
+
+  // Clear backoff so we retry immediately after reconfigure
+  ctrl.ensureBackoff = {};
+}
+
+function ensureDesiredRunning(ns, CFG, ctrl, formulas) {
+  const d = ctrl.desired;
+  if (!d?.mode) return;
+
+  if (d.mode === "XP") {
+    ensureOnce(ns, ctrl, CFG.xpDeploy);
+    return;
+  }
+
+  if (d.mode === "HGW") {
+    ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [d.target]);
+    return;
+  }
+
+  if (d.mode === "BATCH") {
+    if (formulas) ensureOnce(ns, ctrl, CFG.batchOrchestrator, [d.target]);
+    else ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [d.target]);
+    return;
+  }
 }
 
 function kill(ns, script) {
