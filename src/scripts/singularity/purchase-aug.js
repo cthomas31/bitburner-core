@@ -1,4 +1,4 @@
-import { writeJSON } from "/lib/ns-io";
+import { writeJSON } from "/lib/ns-io.js";
 
 /** @param {NS} ns **/
 export async function main(ns) {
