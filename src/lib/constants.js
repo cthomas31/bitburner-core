@@ -104,6 +104,9 @@ export const BATCHER_CONFIG = {
   // worker selection: minimum free RAM to consider a host as worker (GB)
   minWorkerFreeRam: 4,
 
+  useHomeAsWorker: false,
+  reserveHomeRamGb: 256,
+
   // debug toggles
   dryRun: false,
   verbose: true

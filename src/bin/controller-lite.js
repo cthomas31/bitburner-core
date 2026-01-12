@@ -1,3 +1,5 @@
+import { getDarkwebPrograms } from "/scripts/singularity/darkweb-programs.js";
+
 /** @param {NS} ns **/
 export async function main(ns) {
   ns.disableLog("ALL");
