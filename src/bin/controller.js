@@ -259,8 +259,7 @@ export async function main(ns) {
                     }
                     ctrl.lastDarkwebCheckTs = now;
                     ctrl.statusMessages.push(new Date(ctrl.lastDarkwebCheckTs).toLocaleString() + ": Checked darkweb programs");
-                    await ns.sleep(CFG.tickMs);
-                    continue;
+                    break tick;
                 }
 
                 // Faction servers syscall
@@ -268,8 +267,7 @@ export async function main(ns) {
                     await checkFactionServers(ns);
                     ctrl.lastFactionServersCheckTs = now;
                     ctrl.statusMessages.push(new Date(ctrl.lastFactionServersCheckTs).toLocaleString() + ": Checked faction servers");
-                    await ns.sleep(CFG.tickMs);
-                    continue;
+                    break tick;
                 }
 
                 // (A) Check invites periodically
@@ -281,8 +279,7 @@ export async function main(ns) {
                         ctrl.syscallKey = key;
                         ctrl.lastJoinInvitesTs = now;
                         ctrl.statusMessages.push(new Date(ctrl.lastJoinInvitesTs).toLocaleString() + ": Checked faction invites");
-                        await ns.sleep(CFG.tickMs);
-                        continue;
+                        break tick;
                     }
                 }
 
@@ -298,8 +295,7 @@ export async function main(ns) {
                         ctrl.invites.shift();
                         writeJSON(ns, dataPath.invites, { ts: Date.now(), invites: ctrl.invites });
                         ctrl.statusMessages.push(new Date().toLocaleString() + `: Joined faction ${nextFaction}`);
-                        await ns.sleep(CFG.tickMs);
-                        continue;
+                        break tick;
                     }
                 }
 
@@ -539,7 +535,7 @@ export async function main(ns) {
                 }
             }
         };
-        await drawUI(ns, CFG, ctrl, best, mode, target, hack, formulas);
+        await drawUI(ns, CFG, ctrl, best, mode, target, hack, formulas, stockMgr);
         await ns.sleep(CFG.tickMs);
     }
 }
