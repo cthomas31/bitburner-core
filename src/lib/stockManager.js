@@ -199,7 +199,7 @@ function normalizeConfig(c) {
     maxOpenSymbols: c.maxOpenSymbols ?? 8,
 
     // cash buffer
-    minCashAbs: c.minCashAbs ?? 50_000_000,
+    minCashAbs: c.minCashAbs ?? 40_000_000,
     minCashFrac: c.minCashFrac ?? 0.10,
   };
 }

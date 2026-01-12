@@ -75,6 +75,14 @@ export async function main(ns) {
         ],
         factionWorkType: "hacking",
 
+        factionChooser: {
+            repCacheMs: 5 * 60 * 1000,
+            augsCacheMs: 15 * 60 * 1000,
+            repGapPenalty: 1.0,          // bigger = favors nearer goals
+            buyNowBonus: 1e9,            // makes “can buy now” always win
+            crossFactionPrereqPenalty: 0.25, // 0..1 multiplier
+        },
+
         // Install policy
         installCooldownMs: 10 * 60 * 1000,
         minPendingAugs: 8,
@@ -138,6 +146,14 @@ export async function main(ns) {
 
         // augFacts[aug] = { price?, repReq?, stats?, prereqs? }
         augFacts: {},
+
+        // Faction caches for smarter choosing
+        // factionRepCache[f]  = { rep, ts }
+        // factionAugsCache[f] = { augs: [...], ts }
+        factionRepCache: {},
+        factionAugsCache: {},
+        factionCacheIndex: 0,
+        lastFactionCacheUpdateTs: 0,
 
         // pendingPurchase = { faction, aug }
         pendingPurchase: null,
@@ -205,11 +221,13 @@ export async function main(ns) {
             } else {
                 ctrl.syscallPid = 0;
 
-                // Decide faction first
-                ctrl.chosenFaction = pickFactionToWork(ns, CFG);
-
+                
                 // Apply results from previous probes (cheap reads)
                 {
+                    // Always update faction caches from whatever the last syscall wrote,
+                    // even if it wasn't for the current chosenFaction.
+                    await applyFactionCacheFromFiles(ns, ctrl, dataPath);
+
                     const repObj = await readJSON(ns, dataPath.factionRep);
                     if (repObj?.faction === ctrl.chosenFaction) {
                         ctrl.factionRep = clampNumber(repObj.rep, ctrl.factionRep ?? 0);
@@ -243,6 +261,19 @@ export async function main(ns) {
                         ctrl.augFacts[reqsObj.aug].prereqs = reqsObj.prereqs.slice();
                     }
                 }
+
+                // Background cache upkeep: periodically refresh 1 faction (rep or aug list)
+                // so smart chooser has data. This is intentionally gentle.
+                {
+                    const pid = maybeStartFactionCacheUpdate(ns, CFG, ctrl, now, dataPath);
+                    if (pid !== 0) {
+                        ctrl.syscallPid = pid;
+                        // syscallKey is set inside helper
+                        // IMPORTANT: break tick so the single drawUI call runs and we don't start other syscalls
+                        break tick;
+                    }
+                }
+
 
                 // Darkweb syscalls
                 if (now - ctrl.lastDarkwebCheckTs > CFG.checkDarkwebEveryMs) {
@@ -316,6 +347,11 @@ export async function main(ns) {
                 const ownedObj = await readJSON(ns, dataPath.owned);
                 const ownedList = Array.isArray(ownedObj?.owned) ? ownedObj.owned : [];
                 const ownedSet = new Set(ownedList);
+                ctrl.ownedSet = ownedSet;
+
+                // Decide faction AFTER we know what we own and AFTER caches can be updated.
+                // Falls back to priority list until caches fill in.
+                ctrl.chosenFaction = pickFactionToWorkSmart(ns, CFG, ctrl, ownedSet);
 
                 // (D) Refresh faction rep periodically
                 if (ctrl.chosenFaction && (now - ctrl.lastFactionRepTs > CFG.factionRepEveryMs)) {
@@ -739,11 +775,167 @@ function isValid(ns, host, hackLevel) {
 
 /* ---------------- Singularity helpers (controller-side, no singularity API) ---------------- */
 
-// Pick faction to work for based on priority list
-function pickFactionToWork(ns, CFG) {
+// --- New: smart faction chooser + cache upkeep ---
+
+async function applyFactionCacheFromFiles(ns, ctrl, dataPath) {
+    // Rep cache
+    try {
+        const repObj = await readJSON(ns, dataPath.factionRep);
+        if (repObj?.ok && typeof repObj?.faction === "string" && typeof repObj?.rep === "number") {
+            ctrl.factionRepCache ??= {};
+            ctrl.factionRepCache[repObj.faction] = { rep: repObj.rep, ts: Date.now() };
+        }
+    } catch {
+        // ignore
+    }
+
+    // Aug list cache
+    try {
+        const augsObj = await readJSON(ns, dataPath.augsFaction);
+        if (augsObj?.ok && typeof augsObj?.faction === "string" && Array.isArray(augsObj?.augs)) {
+            ctrl.factionAugsCache ??= {};
+            ctrl.factionAugsCache[augsObj.faction] = { augs: augsObj.augs.slice(), ts: Date.now() };
+        }
+    } catch {
+        // ignore
+    }
+}
+
+function maybeStartFactionCacheUpdate(ns, CFG, ctrl, now, dataPath) {
+    const fc = CFG.factionChooser ?? {};
     const factions = ns.getPlayer().factions ?? [];
-    for (const f of CFG.factionPriority) if (factions.includes(f)) return f;
-    return factions[0] ?? null;
+    if (!factions.length) return 0;
+
+    // Only poke caches occasionally, and only when we're not already doing other work.
+    if (now - (ctrl.lastFactionCacheUpdateTs ?? 0) < (fc.cacheUpdateEveryMs ?? 10_000)) return 0;
+    if (ctrl.syscallPid && ns.isRunning(ctrl.syscallPid)) return 0;
+
+    // If we have a pending purchase/install, don't delay that with cache maintenance.
+    if (ctrl.pendingPurchase) return 0;
+
+    ctrl.factionRepCache ??= {};
+    ctrl.factionAugsCache ??= {};
+    ctrl.factionCacheIndex ??= 0;
+
+    // Round-robin over factions
+    for (let i = 0; i < factions.length; i++) {
+        const f = factions[(ctrl.factionCacheIndex + i) % factions.length];
+
+        const repTs = ctrl.factionRepCache[f]?.ts ?? 0;
+        const augsTs = ctrl.factionAugsCache[f]?.ts ?? 0;
+
+        const repStale = (now - repTs) > (fc.repCacheMs ?? 300_000);
+        const augsStale = (now - augsTs) > (fc.augsCacheMs ?? 900_000);
+
+        // Prefer rep refresh first (cheaper + used everywhere)
+        if (repStale) {
+            const key = `syscall:cache-rep:${f}`;
+            const pid = trySyscall(ns, ctrl, key, "scripts/singularity/get-faction-rep.js", [f, dataPath.factionRep], 1000);
+            if (pid !== 0) {
+                ctrl.syscallKey = key;
+                ctrl.lastFactionCacheUpdateTs = now;
+                ctrl.factionCacheIndex = (ctrl.factionCacheIndex + i + 1) % factions.length;
+                return pid;
+            }
+        }
+
+        if (augsStale) {
+            const key = `syscall:cache-augs:${f}`;
+            const pid = trySyscall(ns, ctrl, key, "scripts/singularity/get-augs-from-faction.js", [f, dataPath.augsFaction], 1500);
+            if (pid !== 0) {
+                ctrl.syscallKey = key;
+                ctrl.lastFactionCacheUpdateTs = now;
+                ctrl.factionCacheIndex = (ctrl.factionCacheIndex + i + 1) % factions.length;
+                return pid;
+            }
+        }
+    }
+
+    // Everything fresh enough
+    ctrl.lastFactionCacheUpdateTs = now;
+    return 0;
+}
+
+function pickFactionToWorkSmart(ns, CFG, ctrl, ownedSet) {
+    const factions = ns.getPlayer().factions ?? [];
+    if (!factions.length) return null;
+
+    ctrl.factionRepCache ??= {};
+    ctrl.factionAugsCache ??= {};
+
+    const fc = CFG.factionChooser ?? {};
+    const repGapPenalty = fc.repGapPenalty ?? 1.0;
+    const buyNowBonus = fc.buyNowBonus ?? 1e9;
+    const crossPenalty = fc.crossFactionPrereqPenalty ?? 0.25;
+
+    const cash = ns.getPlayer().money;
+    const spendCap = Math.max(0, cash * CFG.maxAugSpendFraction);
+
+    let bestPick = null;
+
+    for (const f of factions) {
+        const repNow = ctrl.factionRepCache[f]?.rep ?? 0;
+        const augsEntry = ctrl.factionAugsCache[f];
+        const augs = Array.isArray(augsEntry?.augs) ? augsEntry.augs : null;
+        if (!augs || !augs.length) continue;
+
+        let bestAug = null;
+
+        for (const aug of augs) {
+            if (ownedSet.has(aug)) continue;
+
+            const facts = ctrl.augFacts?.[aug];
+            if (!facts) continue;
+            if (typeof facts.price !== "number" || typeof facts.repReq !== "number") continue;
+            if (!facts.stats || !Array.isArray(facts.prereqs)) continue;
+
+            const repGap = Math.max(0, facts.repReq - repNow);
+            const missing = firstMissingPrereq(facts.prereqs, ownedSet);
+
+            // prereq penalty: missing prereq not sold by same faction is a big hassle
+            let prereqMult = 1.0;
+            if (missing) {
+                const prereqSoldHere = augs.includes(missing);
+                prereqMult = prereqSoldHere ? 0.8 : crossPenalty;
+            }
+
+            const roi = augRoiScore(facts.stats, facts.price);
+            let score = (roi * prereqMult) / (1 + repGap * repGapPenalty);
+
+            // “Buy now” dominates: if it’s buyable now, that’s the faction you should work with
+            const buyableNow =
+                !missing &&
+                repGap === 0 &&
+                facts.price <= spendCap &&
+                (cash - facts.price) >= (CFG.minCashReserve ?? 0);
+
+            if (buyableNow) score += buyNowBonus;
+
+            if (!bestAug || score > bestAug.score) {
+                bestAug = { aug, score };
+            }
+        }
+
+        if (!bestAug) continue;
+
+        if (!bestPick || bestAug.score > bestPick.score) {
+            bestPick = { faction: f, score: bestAug.score };
+        }
+    }
+
+    // Fallback to existing priority list until caches/facts exist
+    if (!bestPick) {
+        for (const f of (CFG.factionPriority ?? [])) if (factions.includes(f)) return f;
+        return factions[0];
+    }
+
+    return bestPick.faction;
+}
+
+function firstMissingPrereq(prereqs, ownedSet) {
+    if (!Array.isArray(prereqs)) return null;
+    for (const p of prereqs) if (!ownedSet.has(p)) return p;
+    return null;
 }
 
 // Read pending aug count
@@ -785,13 +977,6 @@ function pruneAugFacts(ctrl, keepSet, maxKeep) {
         if (!keepSet.has(k)) delete ctrl.augFacts[k];
         if (Object.keys(ctrl.augFacts).length <= maxKeep) break;
     }
-}
-
-// Return first missing prereq from ownedSet, or null if all satisfied
-function firstMissingPrereq(prereqs, ownedSet) {
-    if (!Array.isArray(prereqs)) return null;
-    for (const p of prereqs) if (!ownedSet.has(p)) return p;
-    return null;
 }
 
 // Aug value function (hacking + charisma multipliers)
