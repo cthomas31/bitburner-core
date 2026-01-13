@@ -75,6 +75,7 @@ export interface ControllerConfig {
 
 export interface DataPaths {
     owned: string;
+    owned_purchased: string;
     invites: string;
     joinOut: string;
     augsFaction: string;

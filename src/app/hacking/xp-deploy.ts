@@ -1,5 +1,4 @@
 /**
- * scripts/xp/deploy.ts
  *
  * Fill pservs (or all rooted servers) with xp-worker.js pointed at best XP target.
  */
@@ -7,7 +6,7 @@
 import type { NS } from "@ns";
 import { getBestXpTarget } from "/lib/targets.js";
 
-const XP_SCRIPT = "/scripts/xp/worker.js";
+const XP_SCRIPT = "/workers/xp.js";
 
 export async function main(ns: NS): Promise<void> {
     ns.disableLog("scan");

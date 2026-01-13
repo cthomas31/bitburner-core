@@ -50,11 +50,11 @@ export async function main(ns: NS): Promise<void> {
         targetsFile: "/data/targets.json",
         scanEveryMs: 5 * 60 * 1000,
 
-        hgwOrchestrator: "/scripts/hgw/orchestrator.js",
-        batchOrchestrator: "/scripts/batch/orchestrator.js",
-        xpDeploy: "/scripts/xp/deploy.js",
-        gangManager: "/scripts/gang/manager.js",
-        pservManager: "/scripts/pserv-manager.js",
+        hgwOrchestrator: "/app/hacking/strategy-hgw.js",
+        batchOrchestrator: "/app/hacking/strategy-batch.js",
+        xpDeploy: "/app/hacking/xp-deploy.js",
+        gangManager: "/app/gang/manager.js",
+        pservManager: "/app/pserv/manager.js",
 
         enableGangManager: false,
         enablePservManager: true,
@@ -124,6 +124,7 @@ export async function main(ns: NS): Promise<void> {
 
     const dataPath: DataPaths = {
         owned: `${CFG.data_dir}/owned-augs.json`,
+        owned_purchased: `${CFG.data_dir}/owned-augs-purchased.json`,
         invites: `${CFG.data_dir}/invites.json`,
         joinOut: `${CFG.data_dir}/join-faction.json`,
 
@@ -421,13 +422,13 @@ export async function main(ns: NS): Promise<void> {
                 );
                 if (ctrl.invites?.length) {
                     const nextFaction = ctrl.invites[0];
-                    const key = "syscall:jf";
+                    const key = "syscall:join-faction";
                     const pid = trySyscall(
                         ns,
                         ctrl,
                         key,
                         "scripts/singularity/join-faction.js",
-                        [nextFaction, dataPath.joinOut],
+                        [dataPath.joinOut, nextFaction],
                         1000
                     );
                     if (pid !== 0) {
@@ -448,29 +449,33 @@ export async function main(ns: NS): Promise<void> {
 
                 // (C) Refresh owned augs periodically
                 if (now - ctrl.lastOwnedAugsTs > CFG.ownedAugsEveryMs) {
-                    const key = "syscall:own";
+                    const key = "syscall:owned-augs";
                     const pid = trySyscall(
                         ns,
                         ctrl,
                         key,
                         "scripts/singularity/get-owned-augs.js",
-                        [dataPath.owned],
+                        [dataPath.owned, false],
                         1000
                     );
                     if (pid !== 0) {
-                        ctrl.syscallPid = pid;
-                        ctrl.syscallKey = key;
-                        ctrl.lastOwnedAugsTs = now;
-                        break tick;
+                        const key = "syscall:owned-augs-purchased"
+                        const pid = trySyscall(
+                            ns,
+                            ctrl,
+                            key,
+                            "scripts/singularity/get-owned-augs.js",
+                            [dataPath.owned_purchased, true],
+                        )
+                        if (pid !== 0) {
+                            ctrl.syscallPid = pid;
+                            ctrl.syscallKey = key;
+                            ctrl.lastOwnedAugsTs = now;
+                        }
                     }
+                    break tick;
                 }
 
-                // Read owned + pending count
-                ctrl.pendingAugsCount = await readPendingCount(
-                    ns,
-                    dataPath.owned,
-                    ctrl.pendingAugsCount
-                );
                 const ownedObj = (await readJSON(ns, dataPath.owned)) as {
                     owned?: string[];
                 } | null;
@@ -478,6 +483,15 @@ export async function main(ns: NS): Promise<void> {
                 const ownedList = Array.isArray(rawOwned) ? rawOwned : [];
                 const ownedSet = new Set(ownedList);
                 ctrl.ownedSet = ownedSet;
+
+                const ownedPurchasedObj = (await readJSON(ns, dataPath.owned_purchased)) as {
+                    owned?: string[];
+                } | null;
+                const rawOwnedPurchased = ownedPurchasedObj?.owned;
+                const ownedPurchasedList = Array.isArray(rawOwnedPurchased) ? rawOwnedPurchased : [];
+                const ownedPurchasedSet = new Set(ownedPurchasedList);
+                const pendingSet = ownedPurchasedSet.difference(ownedSet);
+                ctrl.pendingAugsCount = pendingSet.size;
 
                 // Decide faction AFTER we know what we own and AFTER caches can be updated.
                 // Falls back to priority list until caches fill in.
@@ -493,13 +507,13 @@ export async function main(ns: NS): Promise<void> {
                     ctrl.chosenFaction &&
                     now - ctrl.lastFactionRepTs > CFG.factionRepEveryMs
                 ) {
-                    const key = "syscall:rep";
+                    const key = "syscall:get-faction-rep";
                     const pid = trySyscall(
                         ns,
                         ctrl,
                         key,
                         "scripts/singularity/get-faction-rep.js",
-                        [ctrl.chosenFaction, dataPath.factionRep],
+                        [dataPath.factionRep, ctrl.chosenFaction],
                         1000
                     );
                     if (pid !== 0) {
@@ -516,13 +530,13 @@ export async function main(ns: NS): Promise<void> {
                     now - ctrl.lastAugsFromFactionTs >
                         CFG.augsFromFactionEveryMs
                 ) {
-                    const key = "syscall:af";
+                    const key = "syscall:augs-from-faction";
                     const pid = trySyscall(
                         ns,
                         ctrl,
                         key,
                         "scripts/singularity/get-augs-from-faction.js",
-                        [ctrl.chosenFaction, dataPath.augsFaction],
+                        [dataPath.augsFaction, ctrl.chosenFaction],
                         1000
                     );
                     if (pid !== 0) {
@@ -564,7 +578,7 @@ export async function main(ns: NS): Promise<void> {
                     now - ctrl.lastAugBuyTs > CFG.augBuyCooldownMs
                 ) {
                     const { faction, aug } = ctrl.pendingPurchase;
-                    const key = "syscall:buy";
+                    const key = "syscall:purchase-aug";
                     const pid = trySyscall(
                         ns,
                         ctrl,
@@ -604,23 +618,23 @@ export async function main(ns: NS): Promise<void> {
                             let pid = 0;
                             let key: string | null = null;
                             if (!Number.isFinite(f.price)) {
-                                key = "syscall:ap";
+                                key = "syscall:get-aug-price";
                                 pid = trySyscall(
                                     ns,
                                     ctrl,
                                     key,
                                     "scripts/singularity/get-aug-price.js",
-                                    [aug, dataPath.augPrice],
+                                    [dataPath.augPrice, aug],
                                     1000
                                 );
                             } else if (!Number.isFinite(f.repReq)) {
-                                key = "syscall:ar";
+                                key = "syscall:get-aug-rep";
                                 pid = trySyscall(
                                     ns,
                                     ctrl,
                                     key,
                                     "scripts/singularity/get-aug-rep.js",
-                                    [aug, dataPath.augRep],
+                                    [dataPath.augRep, aug],
                                     1000
                                 );
                             }
@@ -651,13 +665,13 @@ export async function main(ns: NS): Promise<void> {
                         });
 
                         if (aug) {
-                            const key = "syscall:as";
+                            const key = "syscall:get-aug-stats";
                             const pid = trySyscall(
                                 ns,
                                 ctrl,
                                 key,
                                 "scripts/singularity/get-aug-stats.js",
-                                [aug, dataPath.augStats],
+                                [dataPath.augStats, aug],
                                 1500
                             );
                             if (pid !== 0) {
@@ -686,13 +700,13 @@ export async function main(ns: NS): Promise<void> {
                         });
 
                         if (aug) {
-                            const key = "syscall:aq";
+                            const key = "syscall:get-aug-prereqs";
                             const pid = trySyscall(
                                 ns,
                                 ctrl,
                                 key,
                                 "scripts/singularity/get-aug-prereqs.js",
-                                [aug, dataPath.augReqs],
+                                [dataPath.augReqs, aug],
                                 1500
                             );
                             if (pid !== 0) {
@@ -795,13 +809,13 @@ export async function main(ns: NS): Promise<void> {
                     now - ctrl.lastInstallTs > CFG.installCooldownMs;
 
                 if (canInstall) {
-                    const key = "syscall:ins";
+                    const key = "syscall:install-augs";
                     const pid = trySyscall(
                         ns,
                         ctrl,
                         key,
                         "scripts/singularity/install.js",
-                        ["bootstrap.js", dataPath.install],
+                        [dataPath.install, "bootstrap.js"],
                         2000
                     );
                     if (pid !== 0) {
@@ -824,10 +838,10 @@ export async function main(ns: NS): Promise<void> {
                         key,
                         "scripts/singularity/work-faction.js",
                         [
+                            dataPath.work,
                             ctrl.chosenFaction,
                             CFG.factionWorkType,
-                            false,
-                            dataPath.work,
+                            false
                         ],
                         1000
                     );
