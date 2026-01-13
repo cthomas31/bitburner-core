@@ -2,8 +2,8 @@
 // Helpers for working with targets.json and choosing best targets.
 
 import type { NS, Player, Server } from "@ns";
-import { readJSON } from "/lib/ns-io.js";
-import { TARGETS_FILE } from "./constants.js";
+import { readJSON } from "/lib/ns/io.js";
+import { TARGETS_FILE } from "/lib/constants.js";
 
 // ============== Type Definitions ==============
 

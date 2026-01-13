@@ -8,7 +8,7 @@
 import type { NS } from "@ns";
 import { getRootedServers } from "/lib/network.js";
 import { HACK_CONFIG } from "/lib/constants.js";
-import { formatMoney } from "/lib/util";
+import { formatMoney } from "/lib/util.js";
 
 export async function main(ns: NS): Promise<void> {
     const target = ns.args[0] as string;

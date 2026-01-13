@@ -3,20 +3,30 @@
         "browser": true,
         "es2021": true
     },
-    "extends": [
-        "eslint:recommended",
-        "plugin:@typescript-eslint/recommended"
-    ],
-    "overrides": [
-    ],
+    "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
     "parser": "@typescript-eslint/parser",
     "parserOptions": {
         "ecmaVersion": "latest",
         "sourceType": "module"
     },
-    "plugins": [
-        "@typescript-eslint"
-    ],
+    "plugins": ["@typescript-eslint", "import", "boundaries"],
+    "settings": {
+        "import/resolver": {
+            "alias": {
+                "map": [["/", "./src/"]],
+                "extensions": [".ts", ".js"]
+            }
+        },
+        "boundaries/elements": [
+            { "type": "bin", "pattern": "src/bin/*" },
+            { "type": "app", "pattern": "src/app/**" },
+            { "type": "domain", "pattern": "src/domain/**" },
+            { "type": "lib", "pattern": "src/lib/**" },
+            { "type": "workers", "pattern": "src/workers/**" },
+            { "type": "scripts", "pattern": "src/scripts/**" }
+        ]
+    },
+
     "ignorePatterns": [
         "node_modules/**",
         "build/**",
@@ -24,5 +34,44 @@
         "NetscriptDefinitions.d.ts"
     ],
     "rules": {
+        "no-restricted-imports": [
+            "error",
+            {
+                "patterns": [
+                    "./*",
+                    "../*",
+                    "../../*",
+                    "../../../*",
+                    "../../../../*"
+                ]
+            }
+        ],
+        "import/extensions": [
+            "error",
+            "ignorePackages",
+            {
+                "js": "always",
+                "jsx": "always",
+                "ts": "never",
+                "tsx": "never"
+            }
+        ],
+        "boundaries/element-types": [
+            "error",
+            {
+                "default": "disallow",
+                "rules": [
+                    { "from": "bin", "allow": ["app", "domain", "lib"] },
+                    { "from": "app", "allow": ["domain", "lib", "workers"] },
+                    { "from": "domain", "allow": ["domain", "lib"] },
+                    { "from": "lib", "allow": ["lib"] },
+                    { "from": "workers", "allow": ["lib", "domain"] },
+                    {
+                        "from": "scripts",
+                        "allow": ["app", "domain", "lib", "workers"]
+                    }
+                ]
+            }
+        ]
     }
 }

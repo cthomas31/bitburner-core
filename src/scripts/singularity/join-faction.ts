@@ -5,17 +5,15 @@
  */
 
 import type { NS } from "@ns";
-import { writeJSON } from "/lib/ns-io";
+import { oneShot } from "/lib/singularity.js";
 
 export async function main(ns: NS): Promise<void> {
-    const faction = String(ns.args[0] ?? "");
-    const out = String(ns.args[1] ?? "data/singularity/join-faction.json");
-
-    if (!faction) {
-        ns.write(out, JSON.stringify({ ts: Date.now(), ok: false, error: "missing faction" }, null, 2), "w");
-        return;
-    }
-
-    const ok = ns.singularity.joinFaction(faction);
-    await writeJSON(ns, out, { ts: Date.now(), faction, ok });
+  return oneShot(ns, {
+    args: [{ name: "faction", kind: "string" }],
+    run: ({ faction }) => {
+      const f = String(faction);
+      const ok = ns.singularity.joinFaction(f);
+      return { faction: f, ok: ok };
+    },
+  });
 }

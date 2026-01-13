@@ -15,7 +15,7 @@
 
 import type { NS } from "@ns";
 import { buildNetworkMap, explore } from "/lib/network.js";
-import { writeJSON } from "/lib/ns-io.js";
+import { writeJSON } from "/lib/ns/io.js";
 import { NETWORK_FILE } from "/lib/constants.js";
 
 export async function main(ns: NS): Promise<void> {

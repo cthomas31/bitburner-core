@@ -5,7 +5,7 @@
  */
 
 import type { NS } from "@ns";
-import { getRootedServers } from "/lib/network";
+import { getRootedServers } from "/lib/network.js";
 
 export async function main(ns: NS): Promise<void> {
     ns.disableLog("scan");

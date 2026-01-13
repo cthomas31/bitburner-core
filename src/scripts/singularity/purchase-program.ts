@@ -5,12 +5,15 @@
  */
 
 import type { NS } from "@ns";
-import { writeJSON } from "/lib/ns-io.js";
+import { oneShot } from "/lib/singularity.js";
 
 export async function main(ns: NS): Promise<void> {
-    const program = String(ns.args[0] ?? "");
-    const out = String(ns.args[1] ?? "data/singularity/purchase-program.json");
-
-    const ok = ns.hasTorRouter() && ns.singularity.purchaseProgram(program);
-    await writeJSON(ns, out, { ts: Date.now(), program, ok });
+  return oneShot(ns, {
+    args: [{ name: "programName", kind: "string" }],
+    run: ({ programName }) => {
+      const p = String(programName);
+      const ok = ns.singularity.purchaseProgram(p);
+      return { programName: p, ok };
+    },
+  });
 }

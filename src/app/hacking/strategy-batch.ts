@@ -14,7 +14,7 @@
 
 import type { NS, Player, Server } from "@ns";
 import { BATCHER_CONFIG } from "/lib/constants.js";
-import { readJSON } from "/lib/ns-io.js";
+import { readJSON } from "/lib/ns/io.js";
 
 const TARGETS_FILE = "/data/targets.json";
 

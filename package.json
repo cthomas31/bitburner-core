@@ -7,7 +7,9 @@
     "watch:remote": "bitburner-filesync",
     "watch:init": "node build/init.js",
     "watch:all": "concurrently npm:watch:transpile npm:watch:local npm:watch:remote",
-    "watch": "npm run watch:init && npm run watch:all"
+    "watch": "npm run watch:init && npm run watch:all",
+    "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
+    "lint:fix": "eslint src --ext .ts,.tsx,.js,.jsx --fix"
   },
   "author": "hydroflame, Hoekstraa, based on work by SlyCedix",
   "devDependencies": {
@@ -19,6 +21,9 @@
     "chokidar": "^3.5.3",
     "concurrently": "^7.4.0",
     "eslint": "^8.22.0",
+    "eslint-import-resolver-alias": "^1.1.2",
+    "eslint-plugin-boundaries": "^5.3.1",
+    "eslint-plugin-import": "^2.32.0",
     "fast-glob": "^3.2.12",
     "sync-directory": "^5.1.7",
     "typescript": "^4.7.4"

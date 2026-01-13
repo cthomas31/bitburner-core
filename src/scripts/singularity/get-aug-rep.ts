@@ -5,17 +5,17 @@
  */
 
 import type { NS } from "@ns";
-import { writeJSON } from "/lib/ns-io.js";
+import { oneShot } from "/lib/singularity.js";
 
 export async function main(ns: NS): Promise<void> {
-    const aug = String(ns.args[0] ?? "");
-    const out = String(ns.args[1] ?? "data/singularity/aug-rep.json");
-
-    if (!aug) {
-        await writeJSON(ns, out, { ts: Date.now(), ok: false, error: "missing aug" });
-        return;
-    }
-
-    const repReq = ns.singularity.getAugmentationRepReq(aug);
-    await writeJSON(ns, out, { ts: Date.now(), ok: true, aug, repReq });
+    return oneShot(ns, {
+        args: [
+            { name: "aug", kind: "string" },
+        ],
+        run: ({ aug }) => {
+            const a = String(aug);
+            const repReq = ns.singularity.getAugmentationRepReq(a);
+            return { aug: a, repReq };
+        },
+    });
 }

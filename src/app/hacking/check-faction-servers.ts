@@ -5,12 +5,13 @@
  */
 
 import type { NS } from "@ns";
+import { run } from "/lib/singularity.js";
 
 /**
  * Check for faction-related message files and attempt to backdoor the corresponding servers.
  * Maps faction invitation files to their associated server hostnames.
  */
-export async function checkFactionServers(ns: NS): Promise<void> {
+export async function checkFactionServers(ns: NS): Promise<unknown[]> {
     const factionFilesServerMap: Record<string, string> = {
         "csec-test.msg": "CSEC",
         "nitesec-test.msg": "avmnite-02h",
@@ -18,9 +19,12 @@ export async function checkFactionServers(ns: NS): Promise<void> {
         "19dfj3l1nd.msg": "run4theh111z",
     };
 
+    const result = [];
     for (const [file, server] of Object.entries(factionFilesServerMap)) {
         if (ns.fileExists(file, "home")) {
-            ns.run("scripts/singularity/find-connect-backdoor.js", 1, server);
+            const res = await run(ns, "find-connect-backdoor", [server]);
+            result.push(res);
         }
     }
+    return result;
 }

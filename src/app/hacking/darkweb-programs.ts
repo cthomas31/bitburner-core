@@ -1,15 +1,14 @@
 /**
- * scripts/singularity/darkweb-programs.ts
- *
  * Check for missing darkweb programs and attempt to purchase them.
  */
 
 import type { NS } from "@ns";
+import { run } from "/lib/singularity.js";
 
 /**
  * Get list of required darkweb programs and purchase any that are missing.
  */
-export async function getDarkwebPrograms(ns: NS): Promise<void> {
+export async function getDarkwebPrograms(ns: NS): Promise<unknown[]> {
     const programs = [
         "BruteSSH.exe",
         "FTPCrack.exe",
@@ -20,7 +19,10 @@ export async function getDarkwebPrograms(ns: NS): Promise<void> {
 
     const neededPrograms = programs.filter(prog => !ns.fileExists(prog, "home"));
 
+    const results = [];
     for (const program of neededPrograms) {
-        ns.run("scripts/singularity/purchase-program.js", 1, program);
+        const res = run(ns, "purchase-program", [program]);
+        results.push(res);
     }
+    return results;
 }

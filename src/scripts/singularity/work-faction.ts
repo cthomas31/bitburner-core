@@ -5,16 +5,16 @@
  */
 
 import type { NS } from "@ns";
-import { writeJSON } from "/lib/ns-io";
-
-type FactionWorkType = "hacking" | "field" | "security";
+import { oneShot } from "/lib/singularity.js";
 
 export async function main(ns: NS): Promise<void> {
-    const faction = String(ns.args[0] ?? "");
-    const workType = String(ns.args[1] ?? "hacking") as FactionWorkType; // hacking | field | security
-    const focus = Boolean(ns.args[2] ?? false);
-    const out = String(ns.args[3] ?? "data/singularity/work-faction.json");
-
-    const ok = ns.singularity.workForFaction(faction, workType, focus);
-    await writeJSON(ns, out, { ts: Date.now(), faction, workType, focus, ok });
+  return oneShot(ns, {
+    args: [{ name: "factionName", kind: "string" }, { name: "workType", kind: "string" }],
+    run: ({ factionName, workType }) => {
+      const f = String(factionName);
+      const w = String(workType) as "hacking" | "field" | "security";
+      const ok = ns.singularity.workForFaction(f, w);
+      return { factionName: f, workType: w, ok: ok };
+    },
+  });
 }

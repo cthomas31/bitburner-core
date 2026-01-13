@@ -14,7 +14,7 @@
  */
 
 import type { NS } from "@ns";
-import { readJSON, writeJSON } from "/lib/ns-io.js";
+import { readJSON, writeJSON } from "/lib/ns/io.js";
 import { NETWORK_FILE, TARGETS_FILE, MIN_ABSOLUTE_MONEY, MIN_RELATIVE_MONEY } from "/lib/constants.js";
 import { formatMoney, formatTime } from "/lib/util.js";
 import { computeXpScore } from "/lib/targets.js";

@@ -5,13 +5,16 @@
  */
 
 import type { NS } from "@ns";
-import { writeJSON } from "/lib/ns-io";
+import { oneShot } from "/lib/singularity.js";
 
 export async function main(ns: NS): Promise<void> {
-    const faction = String(ns.args[0] ?? "");
-    const amount = Number(ns.args[1] ?? 0);
-    const out = String(ns.args[2] ?? "data/singularity/donate.json");
-
-    const ok = ns.singularity.donateToFaction(faction, amount);
-    await writeJSON(ns, out, { ts: Date.now(), faction, amount, ok });
+  return oneShot(ns, {
+    args: [{ name: "faction", kind: "string" }, { name: "amount", kind: "number" }],
+    run: ({ faction, amount }) => {
+        const f = String(faction);
+        const a = Number(amount);
+      const ok = ns.singularity.donateToFaction(f, a);
+      return { faction: f, amount: a, ok: ok};
+    },
+  });
 }
