@@ -7,7 +7,7 @@
 import type { NS } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
-    ns.exec("scripts/scan-network.js", "home", 1);
+    ns.exec("scripts/pipeline/scan-network.js", "home", 1);
     await ns.sleep(1000);
-    ns.exec("scripts/score-targets.js", "home", 1);
+    ns.exec("scripts/pipeline/score-targets.js", "home", 1);
 }

@@ -1,4 +1,4 @@
-import { NS } from "@ns";
+import type { NS } from "@ns";
 import { readJSON, writeJSON } from "/lib/ns/io.js";
 import { errorMessage } from "/lib/error.js";
 import { parseArg, ArgSpec, missingArg } from "/lib/ns/arg.js";
@@ -13,7 +13,7 @@ export async function run(
     args: string[]
 ): Promise<any> {
     const scriptPath = SINGULARITY_SCRIPTS + command + ".js";
-    const outputFile = SINGULARITY_OUTPUT + command + ".json";
+    const outputFile = SINGULARITY_OUTPUT + command + "-" + ns.pid + ".json";
     args = [outputFile, ...args];
     const pid = ns.exec(scriptPath, "home", 1, ...args);
     if (pid === 0) {
@@ -25,7 +25,9 @@ export async function run(
         await ns.sleep(500);
     }
 
-    return await readJSON(ns, outputFile);
+    const data = await readJSON(ns, outputFile);
+    ns.rm(outputFile)
+    return data
 }
 
 export type OneShotOk<T extends object> = { ts: number; ok: true } & T;

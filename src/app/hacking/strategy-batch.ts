@@ -342,10 +342,10 @@ function normalizeCfg(cfgIn: Partial<BatcherConfig>): BatcherConfig {
     cfg.statusEveryMs = Number(cfg.statusEveryMs ?? 2000);
 
     cfg.actionScripts = cfg.actionScripts ?? {
-        hack: "/scripts/hack-once.js",
-        grow: "/scripts/grow-once.js",
-        weaken: "/scripts/weaken-once.js",
-        timedRunner: "/scripts/batch/timed-runner.js",
+        hack: "/workers/hack.js",
+        grow: "/workers/grow.js",
+        weaken: "/workers/weaken.js",
+        timedRunner: "/workers/timed-runner.js",
     };
 
     cfg.hackFractionPerBatch = Number(cfg.hackFractionPerBatch ?? 0.1);

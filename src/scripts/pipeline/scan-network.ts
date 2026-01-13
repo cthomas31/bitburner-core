@@ -1,5 +1,4 @@
 /**
- * scripts/scan-network.ts
  *
  * Discover all reachable servers starting from 'home', attempt to gain root on them
  * using any available port-opening programs, and save their metadata to a file.
@@ -70,6 +69,6 @@ export async function main(ns: NS): Promise<void> {
         }
     });
 
-    await writeJSON(ns, NETWORK_FILE, network);
+    writeJSON(ns, NETWORK_FILE, network);
     ns.tprint(`scan-network: discovered ${Object.keys(network).length} servers (saved to ${NETWORK_FILE})`);
 }

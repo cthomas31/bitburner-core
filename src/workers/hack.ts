@@ -9,7 +9,7 @@ import type { NS } from "@ns";
 export async function main(ns: NS): Promise<void> {
     const target = ns.args[0] as string;
     if (!target) {
-        //ns.tprint("Usage: run scripts/hack-once.js <target>");
+        //ns.tprint("Usage: run workers/hack.js <target>");
         return;
     }
     await ns.hack(target);

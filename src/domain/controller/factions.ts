@@ -98,7 +98,7 @@ export function maybeStartFactionCacheUpdate(
                 ctrl,
                 key,
                 "scripts/singularity/get-faction-rep.js",
-                [f, dataPath.factionRep],
+                [dataPath.factionRep, f],
                 1000
             );
             if (pid !== 0) {

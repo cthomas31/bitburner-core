@@ -79,9 +79,9 @@ export async function main(ns: NS): Promise<void> {
         // Figure out how many threads are even available across the fleet
         const totalRamFree = await totalFreeRam(ns);
         ns.print(`Total free RAM: ${totalRamFree.toFixed(2)} GB`);
-        const weakenRam = ns.getScriptRam("/scripts/weaken-once.js", "home");
-        const growRam = ns.getScriptRam("/scripts/grow-once.js", "home");
-        const hackRam = ns.getScriptRam("/scripts/hack-once.js", "home");
+        const weakenRam = ns.getScriptRam("/workers/weaken.js", "home");
+        const growRam = ns.getScriptRam("/workers/grow.js", "home");
+        const hackRam = ns.getScriptRam("/workers/hack.js", "home");
 
         // Allocate threads in priority order: weaken -> grow -> hack
 
@@ -118,13 +118,13 @@ export async function main(ns: NS): Promise<void> {
 
         // Fire off the waves
         if (weakenToLaunch > 0) {
-            await launchDistributed(ns, "/scripts/weaken-once.js", target, weakenToLaunch);
+            await launchDistributed(ns, "/workers/weaken.js", target, weakenToLaunch);
         }
         if (growToLaunch > 0) {
-            await launchDistributed(ns, "/scripts/grow-once.js", target, growToLaunch);
+            await launchDistributed(ns, "/workers/grow.js", target, growToLaunch);
         }
         if (hackToLaunch > 0) {
-            await launchDistributed(ns, "/scripts/hack-once.js", target, hackToLaunch);
+            await launchDistributed(ns, "/workers/hack.js", target, hackToLaunch);
         }
 
         ns.print(`sec=${sec.toFixed(2)} (min ${minSec})`);

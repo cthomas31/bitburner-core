@@ -163,10 +163,10 @@ export const BATCHER_CONFIG: BatcherConfig = {
 
     // Required scripts (paths) — ensure these match your repo.
     actionScripts: {
-        hack: "/scripts/hack-once.js",
-        grow: "/scripts/grow-once.js",
-        weaken: "/scripts/weaken-once.js",
-        timedRunner: "/scripts/batch/timed-runner.js"
+        hack: "/workers/hack.js",
+        grow: "/workers/grow.js",
+        weaken: "/workers/weaken.js",
+        timedRunner: "/workers/timed-runner.js"
     },
 
     // worker selection: minimum free RAM to consider a host as worker (GB)
