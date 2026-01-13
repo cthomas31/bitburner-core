@@ -28,7 +28,6 @@ import {
     pickFactionToWorkSmart,
     firstMissingPrereq,
     readInvites,
-    readPendingCount,
 } from "/domain/controller/factions.js";
 import {
     pruneAugFacts,

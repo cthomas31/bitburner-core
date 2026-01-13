@@ -230,26 +230,6 @@ export function firstMissingPrereq(
     return null;
 }
 
-// Read pending aug count
-export async function readPendingCount(
-    ns: NS,
-    path: string,
-    fallback: number
-): Promise<number> {
-    try {
-        const obj = (await readJSON(ns, path)) as {
-            pendingCount?: number;
-            pending?: unknown[];
-        } | null;
-        if (typeof obj?.pendingCount === "number") return obj.pendingCount;
-        const pending = obj?.pending;
-        if (Array.isArray(pending)) return pending.length;
-        return fallback;
-    } catch {
-        return fallback;
-    }
-}
-
 // Read invites list
 export async function readInvites(
     ns: NS,
