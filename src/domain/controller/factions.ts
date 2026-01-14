@@ -117,7 +117,7 @@ export function maybeStartFactionCacheUpdate(
                 ctrl,
                 key,
                 "scripts/singularity/get-augs-from-faction.js",
-                [f, dataPath.augsFaction],
+                [dataPath.augsFaction, f],
                 1500
             );
             if (pid !== 0) {

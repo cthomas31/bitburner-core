@@ -21,7 +21,7 @@ export async function getDarkwebPrograms(ns: NS): Promise<unknown[]> {
 
     const results = [];
     for (const program of neededPrograms) {
-        const res = run(ns, "purchase-program", [program]);
+        const res = await run(ns, "purchase-program", [program]);
         results.push(res);
     }
     return results;

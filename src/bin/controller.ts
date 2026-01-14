@@ -56,7 +56,7 @@ export async function main(ns: NS): Promise<void> {
         pservManager: "/app/pserv/manager.js",
 
         enableGangManager: false,
-        enablePservManager: true,
+        enablePservManager: false,
 
         batchFromHacking: 800,
         targetSwitchMinImprovement: 1.15,
@@ -489,8 +489,8 @@ export async function main(ns: NS): Promise<void> {
                 const rawOwnedPurchased = ownedPurchasedObj?.owned;
                 const ownedPurchasedList = Array.isArray(rawOwnedPurchased) ? rawOwnedPurchased : [];
                 const ownedPurchasedSet = new Set(ownedPurchasedList);
-                const pendingSet = ownedPurchasedSet.difference(ownedSet);
-                ctrl.pendingAugsCount = pendingSet.size;
+                const pendingSet = [...ownedPurchasedSet].filter(a => !ownedSet.has(a));
+                ctrl.pendingAugsCount = pendingSet.length;
 
                 // Decide faction AFTER we know what we own and AFTER caches can be updated.
                 // Falls back to priority list until caches fill in.
@@ -830,7 +830,7 @@ export async function main(ns: NS): Promise<void> {
                     ctrl.chosenFaction &&
                     now - ctrl.lastWorkFactionTs > CFG.workFactionEveryMs
                 ) {
-                    const key = "syscall:wk";
+                    const key = "syscall:work-faction";
                     const pid = trySyscall(
                         ns,
                         ctrl,

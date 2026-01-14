@@ -30,6 +30,19 @@ export interface StockManagerConfig {
     // cash buffer
     minCashAbs?: number;
     minCashFrac?: number;
+
+    // risk management
+    maxDrawdownFrac?: number;
+    pauseAfterKillMs?: number;
+
+    // trend mode sizing
+    trendLongOnly?: boolean;
+    trendMaxSymbolFrac?: number;
+    trendMaxTotalFrac?: number;
+
+    // other filters
+    maxSpreadFrac?: number;
+    minPrice?: number;
 }
 
 export interface NormalizedConfig {
@@ -51,6 +64,13 @@ export interface NormalizedConfig {
     maxOpenSymbols: number;
     minCashAbs: number;
     minCashFrac: number;
+    maxDrawdownFrac: number;
+    pauseAfterKillMs: number;
+    trendLongOnly: boolean;
+    trendMaxSymbolFrac: number;
+    trendMaxTotalFrac: number;
+    maxSpreadFrac: number;
+    minPrice: number;
 }
 
 export interface PriceEntry {
@@ -67,6 +87,8 @@ export interface StockState {
     entry: Record<string, number>;
     lastStatus: string;
     lastMode: string;
+    equityPeak: number;
+    pausedUntil: number;
 }
 
 export interface SymbolSnapshot {

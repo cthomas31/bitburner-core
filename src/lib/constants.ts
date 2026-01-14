@@ -88,7 +88,7 @@ export interface PservConfig {
 }
 
 export const PSERV_CONFIG: PservConfig = {
-    enabled: true,
+    enabled: false,
 
     hostnamePrefix: "pserv-",
     maxServers: 25,

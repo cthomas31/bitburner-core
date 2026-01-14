@@ -1,5 +1,4 @@
 /**
- * scripts/singularity/get-augs-from-faction.ts
  *
  * Get the list of augmentations available from a faction and write to a JSON file.
  */
