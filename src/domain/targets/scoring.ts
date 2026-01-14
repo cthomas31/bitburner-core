@@ -8,8 +8,8 @@
 
 import type { NS } from "@ns";
 import { hasFormulas } from "/lib/ns/formulas.js";
-import { MIN_ABSOLUTE_MONEY, MIN_RELATIVE_MONEY } from "/lib/constants.js";
 import { computeXpScore } from "/lib/targets.js";
+import { getTargetConfig } from "/domain/targets/config.js";
 
 export interface NetworkInfo {
     hasAdminRights: boolean;
@@ -39,6 +39,7 @@ export interface TargetInfo {
 export function scoreServers(ns: NS, network: Record<string, NetworkInfo>): TargetInfo[] {
     const hackingLevel = ns.getHackingLevel();
     const haveFormulas = hasFormulas(ns);
+    const filters = getTargetConfig(ns).filters;
     const targets: TargetInfo[] = [];
 
     for (const host of Object.keys(network)) {
@@ -46,8 +47,8 @@ export function scoreServers(ns: NS, network: Record<string, NetworkInfo>): Targ
         const currentMoney = ns.getServerMoneyAvailable(host);
         const currentSecurity = ns.getServerSecurityLevel(host);
         if (!info.hasAdminRights) continue;
-        if (info.moneyMax <= MIN_ABSOLUTE_MONEY) continue;
-        if (currentMoney <= info.moneyMax * MIN_RELATIVE_MONEY) continue;
+        if (info.moneyMax <= filters.minAbsoluteMoney) continue;
+        if (currentMoney <= info.moneyMax * filters.minRelativeMoney) continue;
         if (info.requiredHackingSkill > hackingLevel) continue;
 
         const server = ns.getServer(host);

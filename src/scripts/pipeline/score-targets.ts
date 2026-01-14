@@ -15,16 +15,20 @@
 import type { NS } from "@ns";
 import { hasFormulas } from "/lib/ns/formulas.js";
 import { readJSON, writeJSON } from "/lib/ns/io.js";
-import { NETWORK_FILE, TARGETS_FILE } from "/lib/constants.js";
 import { formatMoney, formatTime } from "/lib/util.js";
 import { scoreServers } from "/domain/targets/scoring.js";
 import type { NetworkInfo, TargetInfo } from "/domain/targets/scoring.js";
+import { getTargetConfig } from "/domain/targets/config.js";
 
 
 export async function main(ns: NS): Promise<void> {
-    const network: Record<string, NetworkInfo> = (await readJSON(ns, NETWORK_FILE) || {}) as Record<string, NetworkInfo>;
+    const targetCfg = getTargetConfig(ns);
+    const networkFile = targetCfg.networkFile;
+    const targetsFile = targetCfg.targetsFile;
+
+    const network: Record<string, NetworkInfo> = (await readJSON(ns, networkFile) || {}) as Record<string, NetworkInfo>;
     const targets: TargetInfo[] = scoreServers(ns, network);
-    writeJSON(ns, TARGETS_FILE, targets);
+    writeJSON(ns, targetsFile, targets);
 
     // Display the top five targets in a human-readable format
     if (targets.length === 0) {

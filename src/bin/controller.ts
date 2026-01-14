@@ -9,7 +9,9 @@ import {
     ControllerState,
     DataPaths,
 } from "/domain/controller/types.js";
+import { getControllerConfig } from "/domain/controller/config.js";
 import { makeStockManager, StockManager } from "/app/stocks/manager.js";
+import { getStockManagerConfig } from "/domain/stocks/config.js";
 import { drawUI } from "/domain/controller/ui.js";
 import {
     pickMoneyFirstMode,
@@ -41,85 +43,7 @@ export async function main(ns: NS): Promise<void> {
     ns.disableLog("ALL");
     ns.ui.openTail();
 
-    const CFG: ControllerConfig = {
-        tickMs: 2000,
-
-        // ---- Your existing stuff ----
-        scanScore: "/bin/scan-score.js",
-        targetsFile: "/data/targets.json",
-        scanEveryMs: 5 * 60 * 1000,
-
-        hgwOrchestrator: "/app/hacking/strategy-hgw.js",
-        batchOrchestrator: "/app/hacking/strategy-batch.js",
-        xpDeploy: "/app/hacking/xp-deploy.js",
-        gangManager: "/app/gang/manager.js",
-        pservManager: "/app/pserv/manager.js",
-
-        enableGangManager: false,
-        enablePservManager: false,
-
-        batchFromHacking: 800,
-        targetSwitchMinImprovement: 1.15,
-
-        // ---- Singularity syscalls ----
-        data_dir: "/data/singularity",
-        checkDarkwebEveryMs: 5 * 60 * 1000,
-        checkFactionServersEveryMs: 5 * 60 * 1000,
-        joinInvitesEveryMs: 5 * 60 * 1000,
-        workFactionEveryMs: 60 * 1000,
-        ownedAugsEveryMs: 60 * 1000,
-
-        // Aug pipeline scheduling
-        augsFromFactionEveryMs: 5 * 60 * 1000,
-        factionRepEveryMs: 30 * 1000,
-
-        // Probing cadence
-        augProbeEveryMs: 1500, // 40GB calls (price/rep)
-        augStatsEveryMs: 3500, // 80GB calls
-        augPrereqEveryMs: 3500, // (likely 80GB depending on API)
-        augBuyCooldownMs: 2500,
-
-        // "Reach" gating to avoid wasting 80GB stats calls on far-away augs
-        repReachBuffer: 25_000,
-
-        // Buying policy
-        maxAugSpendFraction: 0.35,
-        minCashReserve: 5e8, // 500M
-
-        // Keep cache bounded
-        maxAugFactsCache: 75,
-
-        // Rep grind (pick one faction)
-        factionPriority: [
-            "Sector-12",
-            "CyberSec",
-            "NiteSec",
-            "The Black Hand",
-            "BitRunners",
-            "Tian Di Hui",
-            "Daedalus",
-            "Aevum",
-            "Volhaven",
-            "Chongqing",
-            "New Tokyo",
-            "Ishima",
-        ],
-        factionWorkType: "hacking",
-
-        factionChooser: {
-            repCacheMs: 5 * 60 * 1000,
-            augsCacheMs: 15 * 60 * 1000,
-            repGapPenalty: 1.0, // bigger = favors nearer goals
-            buyNowBonus: 1e9, // makes "can buy now" always win
-            crossFactionPrereqPenalty: 0.25, // 0..1 multiplier
-        },
-
-        // Install policy
-        installCooldownMs: 10 * 60 * 1000,
-        minPendingAugs: 8,
-
-        enableDonations: false,
-    };
+    const CFG: ControllerConfig = getControllerConfig(ns);
 
     const dataPath: DataPaths = {
         owned: `${CFG.data_dir}/owned-augs.json`,
@@ -195,12 +119,9 @@ export async function main(ns: NS): Promise<void> {
         statusMessages: [],
     };
 
-    const stockMgr: StockManager = makeStockManager({
-        rebalanceMs: 6000,
-        cooldownMs: 20000,
-        maxOpenSymbols: 8,
-        maxSymbolFrac: 0.1,
-    });
+    const stockMgr: StockManager = makeStockManager(
+        getStockManagerConfig(ns)
+    );
     await stockMgr.init(ns, ctrl);
 
     // Ensure results dir exists (write a noop file)

@@ -30,7 +30,7 @@
  */
 
 import type { Hacknet, HacknetNodeConstants, NS } from "@ns";
-import { HACKNET_CONFIG } from "/lib/constants.js";
+import { getHacknetConfig } from "/domain/hacknet/config.js";
 import { formatMoney } from "/lib/util.js";
 
 // ============== Type Definitions ==============
@@ -71,6 +71,7 @@ export async function main(ns: NS): Promise<void> {
     const formulas = ns.formulas.hacknetNodes;
     const mults = ns.getHacknetMultipliers();
     const prodMult = mults.production ?? 1;
+    const cfg = getHacknetConfig(ns);
 
     let constants: HacknetNodeConstants;
     try {
@@ -93,10 +94,10 @@ export async function main(ns: NS): Promise<void> {
         };
     }
 
-    const maxSpendFraction = HACKNET_CONFIG.maxSpendFraction ?? 0.1;
-    const maxPaybackSeconds = HACKNET_CONFIG.maxPaybackSeconds ?? 6 * 60 * 60;
-    const idleLoopMs = HACKNET_CONFIG.idleLoopMs ?? 30_000;
-    const activeLoopMs = HACKNET_CONFIG.activeLoopMs ?? 5_000;
+    const maxSpendFraction = cfg.maxSpendFraction;
+    const maxPaybackSeconds = cfg.maxPaybackSeconds;
+    const idleLoopMs = cfg.idleLoopMs;
+    const activeLoopMs = cfg.activeLoopMs;
 
     ns.print(`[hacknet-manager] Using ROI mode: maxSpend=${(maxSpendFraction * 100).toFixed(1)}% payback<=${ns.tFormat(maxPaybackSeconds * 1000)}`);
 

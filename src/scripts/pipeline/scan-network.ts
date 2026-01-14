@@ -15,11 +15,12 @@
 import type { NS } from "@ns";
 import { buildNetworkMap, explore } from "/lib/network.js";
 import { writeJSON } from "/lib/ns/io.js";
-import { NETWORK_FILE } from "/lib/constants.js";
+import { getTargetConfig } from "/domain/targets/config.js";
 
 export async function main(ns: NS): Promise<void> {
     const start = "home";
     const network = await buildNetworkMap(ns, start);
+    const networkFile = getTargetConfig(ns).networkFile;
 
     /**
      * Attempt to gain root access on a server by opening the required number of ports.
@@ -69,6 +70,8 @@ export async function main(ns: NS): Promise<void> {
         }
     });
 
-    writeJSON(ns, NETWORK_FILE, network);
-    ns.tprint(`scan-network: discovered ${Object.keys(network).length} servers (saved to ${NETWORK_FILE})`);
+    writeJSON(ns, networkFile, network);
+    ns.tprint(
+        `scan-network: discovered ${Object.keys(network).length} servers (saved to ${networkFile})`
+    );
 }

@@ -3,7 +3,7 @@
 
 import type { NS, Player, Server } from "@ns";
 import { readJSON } from "/lib/ns/io.js";
-import { TARGETS_FILE } from "/lib/constants.js";
+import { getTargetConfig } from "/domain/targets/config.js";
 
 // ============== Type Definitions ==============
 
@@ -26,7 +26,8 @@ export interface XpTarget {
 // ============== Functions ==============
 
 export async function loadTargets(ns: NS): Promise<TargetEntry[]> {
-    const targets = await readJSON(ns, TARGETS_FILE) as TargetEntry[] | null;
+    const targetsFile = getTargetConfig(ns).targetsFile;
+    const targets = (await readJSON(ns, targetsFile)) as TargetEntry[] | null;
     return Array.isArray(targets) ? targets : [];
 }
 

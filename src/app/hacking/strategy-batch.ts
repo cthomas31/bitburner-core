@@ -13,47 +13,14 @@
  */
 
 import type { NS, Player, Server } from "@ns";
-import { BATCHER_CONFIG } from "/lib/constants.js";
+import {
+    getBatcherConfig,
+    type BatcherConfig,
+} from "/domain/hacking/config.js";
+import { getTargetConfig } from "/domain/targets/config.js";
 import { readJSON } from "/lib/ns/io.js";
 
-const TARGETS_FILE = "/data/targets.json";
-
 // ============== Type Definitions ==============
-
-interface BatcherConfig {
-    tickMs: number;
-    batchSpacingMs: number;
-    maxBatchesPerTarget: number;
-    startBufferMs: number;
-    ramStarvationCooldownMs: number;
-    useHomeAsWorker: boolean;
-    reserveHomeRamGb: number;
-    homeScheduleBufferGb: number;
-    targetRefreshMs: number;
-    candidateLimit: number;
-    maxTargets: number;
-    minTargets: number;
-    minTargetRamShareGb: number;
-    targetHysteresisKeep: number;
-    offsets: {
-        hack: number;
-        weaken1: number;
-        grow: number;
-        weaken2: number;
-    };
-    prep: {
-        moneyFracMin: number;
-        secAboveMin: number;
-    };
-    statusEveryMs: number;
-    actionScripts: {
-        hack: string;
-        grow: string;
-        weaken: string;
-        timedRunner: string;
-    };
-    hackFractionPerBatch: number;
-}
 
 interface Worker {
     host: string;
@@ -140,7 +107,8 @@ export async function main(ns: NS): Promise<void> {
     ns.disableLog("getServerMaxRam");
     ns.disableLog("getServerUsedRam");
 
-    const cfg = normalizeCfg(BATCHER_CONFIG);
+    const cfg = normalizeCfg(getBatcherConfig(ns));
+    const targetCfg = getTargetConfig(ns);
 
     const explicitTarget = ns.args[0] ? String(ns.args[0]) : null;
     if (explicitTarget)
@@ -195,7 +163,8 @@ export async function main(ns: NS): Promise<void> {
                         cfg,
                         player,
                         workers,
-                        poolState
+                        poolState,
+                        targetCfg.targetsFile
                     );
                     poolState.active = picked;
                     poolState.lastRefresh = now;
@@ -377,11 +346,17 @@ async function pickTargetsDynamic(
     cfg: BatcherConfig,
     player: Player,
     workers: Worker[],
-    poolState: PoolState
+    poolState: PoolState,
+    targetsFile: string
 ): Promise<string[]> {
     const hackLevel = player.skills.hacking;
 
-    const candidates = await readCandidatesFromTargetsJson(ns, cfg, hackLevel);
+    const candidates = await readCandidatesFromTargetsJson(
+        ns,
+        cfg,
+        hackLevel,
+        targetsFile
+    );
     if (!candidates.length) return [];
 
     // Total free RAM across workers (rough capacity signal)
@@ -459,9 +434,10 @@ async function pickTargetsDynamic(
 async function readCandidatesFromTargetsJson(
     ns: NS,
     cfg: BatcherConfig,
-    hackLevel: number
+    hackLevel: number,
+    targetsFile: string
 ): Promise<string[]> {
-    const rows = await readJSON(ns, TARGETS_FILE);
+    const rows = await readJSON(ns, targetsFile);
     if (!Array.isArray(rows) || !rows.length) return [];
 
     const hosts: string[] = [];

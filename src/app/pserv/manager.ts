@@ -22,11 +22,12 @@
  *                      server and run it. Defaults to bin/controller.js.
  *
  * Dependencies:
- *   - lib/constants.js (PSERV_CONFIG)
+ *   - settings via /domain/pserv/config.js
  */
 
 import type { NS } from "@ns";
-import { PSERV_CONFIG } from "/lib/constants.js";
+import { getPservConfig } from "/domain/pserv/config.js";
+import { getNumber } from "/lib/settings.js";
 import { formatMoney } from "/lib/util.js";
 
 // ============== Type Definitions ==============
@@ -39,7 +40,7 @@ interface UpgradeCandidate {
     payback: number;
 }
 
-interface PservConfig {
+interface PservManagerConfig {
     maxSpendFraction: number;
     maxPaybackSeconds: number;
     threadIncomePerSec: number;
@@ -56,16 +57,20 @@ export async function main(ns: NS): Promise<void> {
 
     const flags = ns.flags([["deploy", "bin/controller.js"]]) as { deploy: string };
     const deployScript: string = flags.deploy ?? "bin/controller.js";
+    const settings = getPservConfig(ns);
 
-    // Config with defaults - using actual PSERV_CONFIG property names
-    const cfg: PservConfig = {
-        maxSpendFraction: PSERV_CONFIG.maxSpendFraction ?? 0.25,
-        maxPaybackSeconds: PSERV_CONFIG.roiMaxPaybackSeconds ?? 6 * 60 * 60,
-        threadIncomePerSec: 10_000, // Not in config, use hardcoded default
-        idleLoopMs: 60_000, // Not in config, use hardcoded default
-        activeLoopMs: 5_000, // Not in config, use hardcoded default
-        prefix: PSERV_CONFIG.hostnamePrefix ?? "pserv-",
-        maxServers: ns.getPurchasedServerLimit(),
+    // Config with defaults - using settings-backed pserv properties
+    const cfg: PservManagerConfig = {
+        maxSpendFraction: settings.maxSpendFraction,
+        maxPaybackSeconds: settings.roiMaxPaybackSeconds,
+        threadIncomePerSec: getNumber(ns, "pserv.manager.threadIncomePerSec"),
+        idleLoopMs: getNumber(ns, "pserv.manager.idleLoopMs"),
+        activeLoopMs: getNumber(ns, "pserv.manager.activeLoopMs"),
+        prefix: settings.hostnamePrefix,
+        maxServers: Math.min(
+            settings.maxServers,
+            ns.getPurchasedServerLimit()
+        ),
     };
 
     ns.print(`[pserv-manager] Config: maxSpend=${(cfg.maxSpendFraction * 100).toFixed(0)}%, payback<=${ns.tFormat(cfg.maxPaybackSeconds * 1000)}`);
@@ -87,7 +92,7 @@ export async function main(ns: NS): Promise<void> {
  */
 async function manageFleetROI(
     ns: NS,
-    cfg: PservConfig,
+    cfg: PservManagerConfig,
     deployScript: string
 ): Promise<void> {
     const money = ns.getServerMoneyAvailable("home");
@@ -172,7 +177,7 @@ async function manageFleetROI(
  * Estimate $/sec income a host with `threads` adds, very rough.
  */
 function estimateThreadIncome(
-    cfg: PservConfig,
+    cfg: PservManagerConfig,
     threads: number
 ): number {
     return threads * cfg.threadIncomePerSec;
@@ -184,7 +189,7 @@ function estimateThreadIncome(
 function addCandidate(
     ns: NS,
     candidates: UpgradeCandidate[],
-    cfg: PservConfig,
+    cfg: PservManagerConfig,
     base: {
         hostname: string;
         oldRam: number;
