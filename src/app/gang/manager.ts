@@ -14,32 +14,9 @@
  */
 
 import type { GangMemberInfo, NS } from "@ns";
+import { getGangConfig, GangConfig } from "/domain/gangs/config.js";
 
 // ============== Type Definitions ==============
-
-interface GangConfig {
-    loopIntervalMs: number;
-
-    // Training thresholds
-    minHackForCrimes: number;
-    minCombatForCrimes: number;
-
-    // Wanted management
-    minEfficiencyBeforeCleanup: number;
-    targetEfficiencyAfterCleanup: number;
-    vigilanteFraction: number;
-
-    // Ascension tuning (conservative)
-    enableAscension: boolean;
-    minAscendHackMult: number;
-    minAscendCombatMult: number;
-    minRespectBeforeAscend: number;
-    gangSafetyRespect: number;
-    ascendCooldownMs: number;
-
-    // Crime focus: "money" or "respect"
-    crimeFocus: "money" | "respect";
-}
 
 interface TaskMap {
     trainHack: string | null;
@@ -69,28 +46,22 @@ export async function main(ns: NS): Promise<void> {
         return;
     }
 
+    const settings = getGangConfig(ns);
+
     const cfg: GangConfig = {
-        loopIntervalMs: 3000,
-
-        // Training thresholds
-        minHackForCrimes: 150,
-        minCombatForCrimes: 150,
-
-        // Wanted management
-        minEfficiencyBeforeCleanup: 0.85,  // if eff < 0.90 (10%+ penalty) -> start cleanup
-        targetEfficiencyAfterCleanup: 0.95, // keep cleaning until eff > 0.96 (~4% penalty)
-        vigilanteFraction: 1.0,
-
-        // Ascension tuning (conservative)
-        enableAscension: true,
-        minAscendHackMult: 3.0,      // require at least 3x hack multiplier
-        minAscendCombatMult: 1.5,    // and 1.5x on all combat stats
-        minRespectBeforeAscend: 1000, // don't ascend total scrubs
-        gangSafetyRespect: 2_500_000, // avoid ascensions below this respect level
-        ascendCooldownMs: 5 * 60 * 1000, // per-member cooldown between ascensions
-
-        // Crime focus: "money" or "respect"
-        crimeFocus: "money",    // change to "respect" when you want rep-focused crimes
+        loopIntervalMs: settings.loopIntervalMs,
+        minHackForCrimes: settings.minHackForCrimes,
+        minCombatForCrimes: settings.minCombatForCrimes,
+        minEfficiencyBeforeCleanup: settings.minEfficiencyBeforeCleanup,
+        targetEfficiencyAfterCleanup: settings.targetEfficiencyAfterCleanup,
+        vigilanteFraction: settings.vigilanteFraction,
+        enableAscension: settings.enableAscension,
+        minAscendHackMult: settings.minAscendHackMult,
+        minAscendCombatMult: settings.minAscendCombatMult,
+        minRespectBeforeAscend: settings.minRespectBeforeAscend,
+        gangSafetyRespect: settings.gangSafetyRespect,
+        ascendCooldownMs: settings.ascendCooldownMs,
+        crimeFocus: settings.crimeFocus,
     };
 
     const taskMap = detectTasks(ns);

@@ -143,4 +143,27 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     // Targets scoring
     "targets.filters.minAbsoluteMoney": 0,
     "targets.filters.minRelativeMoney": 0,
+
+    // Gangs
+    "gangs.loopIntervalMs": 3000,
+
+    // Training thresholds
+    "gangs.training.minHackForCrimes": 150,
+    "gangs.training.minCombatForCrimes": 150,
+
+    // Wanted management
+    "gangs.wanted.minEfficiencyBeforeCleanup": 0.85,  // if eff < 0.90 (10%+ penalty) -> start cleanup
+    "gangs.wanted.targetEfficiencyAfterCleanup": 0.95, // keep cleaning until eff > 0.96 (~4% penalty)
+    "gangs.wanted.vigilanteFraction": 1.0,
+
+    // Ascension tuning (conservative)
+    "gangs.ascension.enableAscension": true,
+    "gangs.ascension.minAscendHackMult": 3.0,      // require at least 3x hack multiplier
+    "gangs.ascension.minAscendCombatMult": 1.5,    // and 1.5x on all combat stats
+    "gangs.ascension.minRespectBeforeAscend": 1000, // don't ascend total scrubs
+    "gangs.ascension.gangSafetyRespect": 2_500_000, // avoid ascensions below this respect level
+    "gangs.ascension.ascendCooldownMs": 5 * 60 * 1000, // per-member cooldown between ascensions
+
+    // Crime focus: "money" or "respect"
+    "gangs.crimeFocus": "money",    // change to "respect" when you want rep-focused crimes
 };

@@ -133,5 +133,19 @@
     "batcher.hackFractionPerBatch": 0.1,
 
     "targets.filters.minAbsoluteMoney": 0,
-    "targets.filters.minRelativeMoney": 0
+    "targets.filters.minRelativeMoney": 0,
+
+    "gangs.loopIntervalMs": 3000,
+    "gangs.minHackForCrimes": 150,
+    "gangs.minCombatForCrimes": 150,
+    "gangs.minEfficiencyBeforeCleanup": 0.85,
+    "gangs.targetEfficiencyAfterCleanup": 0.95,
+    "gangs.vigilanteFraction": 1.0,
+    "gangs.enableAscension": true,
+    "gangs.minAscendHackMult": 3.0,
+    "gangs.minAscendCombatMult": 1.5,
+    "gangs.minRespectBeforeAscend": 1000,
+    "gangs.gangSafetyRespect": 2500000,
+    "gangs.ascendCooldownMs": 300000,
+    "gangs.crimeFocus": "money"
 }

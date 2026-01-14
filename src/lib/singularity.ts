@@ -11,7 +11,7 @@ export async function run(
     ns: NS,
     command: string,
     args: string[]
-): Promise<any> {
+): Promise<unknown> {
     const scriptPath = SINGULARITY_SCRIPTS + command + ".js";
     const outputFile = SINGULARITY_OUTPUT + command + "-" + ns.pid + ".json";
     args = [outputFile, ...args];
