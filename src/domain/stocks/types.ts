@@ -118,3 +118,30 @@ export interface ScoredCandidate {
     score: number;
     targetShares: number;
 }
+
+export type TrendDebug = {
+    total: number;
+    passSpread: number;
+    passMinPrice: number;
+    passHist: number;
+    passSlow: number;
+    passDir: number;
+    passLongOnly: number;
+    passTargetShares: number;
+
+    skipSpread: number;
+    skipMinPrice: number;
+    skipHist: number;
+    skipSlow: number;
+    skipNoDir: number;
+    skipLongOnly: number;
+    skipTargetShares: number;
+
+    candidates: number; // pushed into scored
+
+    minSpreadFrac: number;
+    maxSpreadFrac: number;
+    minSpreadSym: string;
+    maxSpreadSym: string;
+
+};

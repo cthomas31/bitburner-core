@@ -44,7 +44,8 @@ export function getNumber(ns: NS, key: string): number {
         const n = Number(value);
         if (Number.isFinite(n)) return n;
     }
-    if (typeof fallback === "number" && Number.isFinite(fallback)) return fallback;
+    if (typeof fallback === "number" && Number.isFinite(fallback))
+        return fallback;
     return 0;
 }
 
@@ -95,4 +96,43 @@ export function getPrefix(ns: NS, prefix: string): Record<string, unknown> {
         }
     }
     return out;
+}
+
+function fnv1a32(s: string): number {
+    let h = 0x811c9dc5; // offset basis
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        // 32-bit FNV prime multiply (via shifts to stay in 32-bit)
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h >>> 0;
+}
+
+export function makeSettingsWatcher(
+    ns: NS,
+    path = "/settings.json",
+    checkEveryMs = 2000
+) {
+    let lastCheck = 0;
+    let lastHash: number | null = null;
+
+    return function maybeReloadSettings() {
+        const now = Date.now();
+        if (now - lastCheck < checkEveryMs) return;
+        lastCheck = now;
+
+        const raw = ns.read(path) ?? "";
+        const hash = fnv1a32(raw);
+
+        if (lastHash === null) {
+            lastHash = hash; // first observation
+            return;
+        }
+
+        if (hash !== lastHash) {
+            lastHash = hash;
+            reloadSettings(ns);
+            ns.print(`[settings] reloaded (hash=${hash})`);
+        }
+    };
 }

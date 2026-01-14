@@ -27,22 +27,21 @@ export interface GangConfig {
 
 export function getGangConfig(ns: NS): GangConfig {
     return {
-        loopIntervalMs: getNumber(ns, "gang.loopIntervalMs"),
+        loopIntervalMs: getNumber(ns, "gangs.loopIntervalMs"),
 
-        minHackForCrimes: getNumber(ns, "gang.training.minHackForCrimes"),
-        minCombatForCrimes: getNumber(ns, "gang.training.minCombatForCrimes"),
+        minHackForCrimes: getNumber(ns, "gangs.training.minHackForCrimes"),
+        minCombatForCrimes: getNumber(ns, "gangs.training.minCombatForCrimes"),
 
-        minEfficiencyBeforeCleanup: getNumber(ns, "gang.wanted.minEfficiencyBeforeCleanup"),
-        targetEfficiencyAfterCleanup: getNumber(ns, "gang.wanted.targetEfficiencyAfterCleanup"),
-        vigilanteFraction: getNumber(ns, "gang.wanted.vigilanteFraction"),
+        minEfficiencyBeforeCleanup: getNumber(ns, "gangs.wanted.minEfficiencyBeforeCleanup"),
+        targetEfficiencyAfterCleanup: getNumber(ns, "gangs.wanted.targetEfficiencyAfterCleanup"),
+        vigilanteFraction: getNumber(ns, "gangs.wanted.vigilanteFraction"),
 
-        enableAscension: getBool(ns, "gang.ascension.enableAscension"),
-        minAscendHackMult: getNumber(ns, "gang.ascension.minAscendHackMult"),
-        minAscendCombatMult: getNumber(ns, "gang.ascension.minAscendCombatMult"),
-        minRespectBeforeAscend: getNumber(ns, "gang.ascension.minRespectBeforeAscend"),
-        gangSafetyRespect: getNumber(ns, "gang.ascension.gangSafetyRespect"),
-        ascendCooldownMs: getNumber(ns, "gang.ascension.ascendCooldownMs"),
-
-        crimeFocus: getString(ns, "gang.crimeFocus") as "money" | "respect",
+        enableAscension: getBool(ns, "gangs.ascension.enableAscension"),
+        minAscendHackMult: getNumber(ns, "gangs.ascension.minAscendHackMult"),
+        minAscendCombatMult: getNumber(ns, "gangs.ascension.minAscendCombatMult"),
+        minRespectBeforeAscend: getNumber(ns, "gangs.ascension.minRespectBeforeAscend"),
+        gangSafetyRespect: getNumber(ns, "gangs.ascension.gangSafetyRespect"),
+        ascendCooldownMs: getNumber(ns, "gangs.ascension.ascendCooldownMs"),
+        crimeFocus: getString(ns, "gangs.crimeFocus") as "money" | "respect",
     };
 }

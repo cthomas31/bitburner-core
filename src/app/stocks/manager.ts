@@ -19,7 +19,8 @@ import {
     NormalizedConfig,
     SymbolSnapshot,
     Desire,
-    ScoredCandidate
+    ScoredCandidate,
+    TrendDebug,
 } from "/domain/stocks/types.js";
 import type { ControllerState } from "/domain/controller/types.js";
 
@@ -81,7 +82,6 @@ export function makeStockManager(
 
                 equityPeak: st.equityPeak ?? 0,
                 pausedUntil: st.pausedUntil ?? 0,
-
             };
         },
 
@@ -107,27 +107,33 @@ export function makeStockManager(
 
             // pause if killed recently
             if ((ctrl.stock.pausedUntil ?? 0) > now) {
-            ctrl.stock.lastStatus = `paused after drawdown until ${new Date(ctrl.stock.pausedUntil).toLocaleTimeString()}`;
-            ctrl.stock.lastRebalance = now;
-            await persist(ns, ctrl.stock, cfg);
-            return;
-            }
-
-            // update peak + check drawdown
-            ctrl.stock.equityPeak = Math.max(ctrl.stock.equityPeak ?? 0, equity);
-            if (ctrl.stock.equityPeak > 0) {
-            const dd = 1 - (equity / ctrl.stock.equityPeak);
-            if (dd >= cfg.maxDrawdownFrac) {
-                // liquidate everything, pause
-                liquidateAll(ns);
-                ctrl.stock.pausedUntil = now + cfg.pauseAfterKillMs;
-                ctrl.stock.lastStatus = `KILL SWITCH: drawdown ${(dd*100).toFixed(1)}% -> liquidated + paused`;
+                ctrl.stock.lastStatus = `paused after drawdown until ${new Date(
+                    ctrl.stock.pausedUntil
+                ).toLocaleTimeString()}`;
                 ctrl.stock.lastRebalance = now;
                 await persist(ns, ctrl.stock, cfg);
                 return;
             }
-            }
 
+            // update peak + check drawdown
+            ctrl.stock.equityPeak = Math.max(
+                ctrl.stock.equityPeak ?? 0,
+                equity
+            );
+            if (ctrl.stock.equityPeak > 0) {
+                const dd = 1 - equity / ctrl.stock.equityPeak;
+                if (dd >= cfg.maxDrawdownFrac) {
+                    // liquidate everything, pause
+                    liquidateAll(ns);
+                    ctrl.stock.pausedUntil = now + cfg.pauseAfterKillMs;
+                    ctrl.stock.lastStatus = `KILL SWITCH: drawdown ${(
+                        dd * 100
+                    ).toFixed(1)}% -> liquidated + paused`;
+                    ctrl.stock.lastRebalance = now;
+                    await persist(ns, ctrl.stock, cfg);
+                    return;
+                }
+            }
 
             // Hard cash buffer
             const minCash = cashFloor(ns, equity, cfg);
@@ -141,9 +147,16 @@ export function makeStockManager(
             }
 
             // Build desired positions
-            const desires = have4S
-                ? computeForecastDesires(snapshot, equity, cfg)
-                : computeTrendDesires(ns, snapshot, equity, cfg);
+            let desires: Map<string, Desire>;
+            let trendDebug: TrendDebug | null = null;
+
+            if (have4S) {
+                desires = computeForecastDesires(snapshot, equity, cfg);
+            } else {
+                const res = computeTrendDesires(ns, snapshot, equity, cfg);
+                desires = res.desires;
+                trendDebug = res.debug;
+            }
 
             // Do bounded actions per tick: exits first, then entries/resizes
             let actions = 0;
@@ -202,7 +215,12 @@ export function makeStockManager(
                     const buyMore = Math.max(0, want.targetShares - longShares);
                     if (buyMore > 0) {
                         const floor = cashFloor(ns, equity, cfg);
-                        const safeShares = maxAffordableLongShares(ns, sym, buyMore, floor);
+                        const safeShares = maxAffordableLongShares(
+                            ns,
+                            sym,
+                            buyMore,
+                            floor
+                        );
                         if (safeShares > 0) {
                             ns.stock.buyStock(sym, safeShares);
                             setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
@@ -226,11 +244,27 @@ export function makeStockManager(
             }
 
             ctrl.stock.lastRebalance = now;
+            const debugStr = trendDebug
+                ? ` dbg(total=${trendDebug.total} cand=${trendDebug.candidates}` +
+                  ` skipSpread=${trendDebug.skipSpread}` +
+                  ` spread=[${(trendDebug.minSpreadFrac * 100).toFixed(2)}% ${
+                      trendDebug.minSpreadSym
+                  }..${(trendDebug.maxSpreadFrac * 100).toFixed(2)}% ${
+                      trendDebug.maxSpreadSym
+                  } maxSpreadFrac=${cfg.maxSpreadFrac}]` +
+                  ` skipMinP=${trendDebug.skipMinPrice}` +
+                  ` skipHist=${trendDebug.skipHist}` +
+                  ` skipSlow=${trendDebug.skipSlow}` +
+                  ` skipDir=${trendDebug.skipNoDir}` +
+                  ` skipLongOnly=${trendDebug.skipLongOnly}` +
+                  ` skipShares=${trendDebug.skipTargetShares})`
+                : "";
+
             ctrl.stock.lastStatus = `rebalance ok: mode=${
                 ctrl.stock.lastMode
             } actions=${actions} equity=${fmt(equity)} cash=${fmt(
                 cash
-            )} desires=${desires.size}`;
+            )} desires=${desires.size}${debugStr}`;
 
             await persist(ns, ctrl.stock, cfg);
         },
@@ -286,43 +320,46 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         minCashFrac: c.minCashFrac ?? 0.1,
 
         // risk controls
-        maxDrawdownFrac: c.maxDrawdownFrac ?? 0.15,   // 15% drawdown kill-switch
+        maxDrawdownFrac: c.maxDrawdownFrac ?? 0.15, // 15% drawdown kill-switch
         pauseAfterKillMs: c.pauseAfterKillMs ?? 5 * 60 * 1000,
 
         // trend mode clamps (no 4S)
         trendLongOnly: c.trendLongOnly ?? true,
         trendMaxSymbolFrac: c.trendMaxSymbolFrac ?? 0.02, // 2% per symbol
-        trendMaxTotalFrac: c.trendMaxTotalFrac ?? 0.20,   // 20% total exposure
-        maxSpreadFrac: c.maxSpreadFrac ?? 0.003,          // skip if spread > 0.3%
-        minPrice: c.minPrice ?? 5_000,                    // skip cheap noisy tickers
-
+        trendMaxTotalFrac: c.trendMaxTotalFrac ?? 0.2, // 20% total exposure
+        maxSpreadFrac: c.maxSpreadFrac ?? 0.003, // skip if spread > 0.3%
+        minPrice: c.minPrice ?? 5_000, // skip cheap noisy tickers
     };
 }
 
-
 function cashFloor(ns: NS, equity: number, cfg: NormalizedConfig): number {
-  // Maintain an operating cash buffer so the controller never bricks the run (critical in BN8).
-  return Math.max(cfg.minCashAbs, equity * cfg.minCashFrac);
+    // Maintain an operating cash buffer so the controller never bricks the run (critical in BN8).
+    return Math.max(cfg.minCashAbs, equity * cfg.minCashFrac);
 }
 
-function maxAffordableLongShares(ns: NS, sym: string, wantShares: number, floorCash: number): number {
-  const cash = ns.getServerMoneyAvailable("home");
-  const usable = Math.max(0, cash - floorCash);
-  const ask = ns.stock.getAskPrice(sym);
-  if (ask <= 0) return 0;
-  const cap = Math.floor(usable / ask);
-  return Math.max(0, Math.min(wantShares, cap));
+function maxAffordableLongShares(
+    ns: NS,
+    sym: string,
+    wantShares: number,
+    floorCash: number
+): number {
+    const cash = ns.getServerMoneyAvailable("home");
+    const usable = Math.max(0, cash - floorCash);
+    const ask = ns.stock.getAskPrice(sym);
+    if (ask <= 0) return 0;
+    const cap = Math.floor(usable / ask);
+    return Math.max(0, Math.min(wantShares, cap));
 }
-
 
 // ============== Helpers ==============
 
 function liquidateAll(ns: NS): void {
-  for (const sym of ns.stock.getSymbols()) {
-    const [l, , sh] = ns.stock.getPosition(sym);
-    if (l > 0) ns.stock.sellStock(sym, l);
-    if (sh > 0 && typeof ns.stock.sellShort === "function") ns.stock.sellShort(sym, sh);
-  }
+    for (const sym of ns.stock.getSymbols()) {
+        const [l, , sh] = ns.stock.getPosition(sym);
+        if (l > 0) ns.stock.sellStock(sym, l);
+        if (sh > 0 && typeof ns.stock.sellShort === "function")
+            ns.stock.sellShort(sym, sh);
+    }
 }
 
 // ============== API Detection ==============
@@ -400,22 +437,21 @@ function readSym(
 }
 
 function estimateEquity(ns: NS, snapshot: SymbolSnapshot[]): number {
-  // Conservative mark-to-market equity estimate.
-  // Longs valued at bid; shorts valued as unrealized P/L using entry shortPx vs current ask.
-  // (Commission ignored here; it is handled as churn control elsewhere.)
-  let eq = ns.getServerMoneyAvailable("home");
+    // Conservative mark-to-market equity estimate.
+    // Longs valued at bid; shorts valued as unrealized P/L using entry shortPx vs current ask.
+    // (Commission ignored here; it is handled as churn control elsewhere.)
+    let eq = ns.getServerMoneyAvailable("home");
 
-  for (const s of snapshot) {
-    if (s.longShares > 0) {
-      eq += s.bid * s.longShares;
+    for (const s of snapshot) {
+        if (s.longShares > 0) {
+            eq += s.bid * s.longShares;
+        }
+        if (s.shortShares > 0) {
+            eq += (s.shortPx - s.ask) * s.shortShares;
+        }
     }
-    if (s.shortShares > 0) {
-      eq += (s.shortPx - s.ask) * s.shortShares;
-    }
-  }
-  return eq;
+    return eq;
 }
-
 
 // ============== Decision Logic ==============
 
@@ -479,23 +515,76 @@ function computeTrendDesires(
     snapshot: SymbolSnapshot[],
     equity: number,
     cfg: NormalizedConfig
-): Map<string, Desire> {
+): { desires: Map<string, Desire>; debug: TrendDebug } {
     const scored: ScoredCandidate[] = [];
 
+    const debug: TrendDebug = {
+        total: 0,
+        passSpread: 0,
+        passMinPrice: 0,
+        passHist: 0,
+        passSlow: 0,
+        passDir: 0,
+        passLongOnly: 0,
+        passTargetShares: 0,
+
+        skipSpread: 0,
+        skipMinPrice: 0,
+        skipHist: 0,
+        skipSlow: 0,
+        skipNoDir: 0,
+        skipLongOnly: 0,
+        skipTargetShares: 0,
+
+        candidates: 0,
+
+        minSpreadFrac: Number.POSITIVE_INFINITY,
+        maxSpreadFrac: 0,
+        minSpreadSym: "",
+        maxSpreadSym: "",
+    };
+
     for (const s of snapshot) {
+        debug.total++;
+
         // Filter out nasty spread / penny-ish volatility in trend mode
         const spreadFrac = s.ask > 0 ? (s.ask - s.bid) / s.ask : 1;
-        if (spreadFrac > cfg.maxSpreadFrac) continue;
-        if (s.ask < cfg.minPrice) continue;
+        if (spreadFrac < debug.minSpreadFrac) {
+            debug.minSpreadFrac = spreadFrac;
+            debug.minSpreadSym = s.sym;
+        }
+        if (spreadFrac > debug.maxSpreadFrac) {
+            debug.maxSpreadFrac = spreadFrac;
+            debug.maxSpreadSym = s.sym;
+        }
+
+        if (spreadFrac > cfg.maxSpreadFrac) {
+            debug.skipSpread++;
+            continue;
+        }
+        debug.passSpread++;
+
+        if (s.ask < cfg.minPrice) {
+            debug.skipMinPrice++;
+            continue;
+        }
+        debug.passMinPrice++;
 
         const hist = s.history ?? [];
-        if (!hist || hist.length < Math.max(cfg.emaFast, cfg.emaSlow) + 2)
+        if (!hist || hist.length < Math.max(cfg.emaFast, cfg.emaSlow) + 2) {
+            debug.skipHist++;
             continue;
+        }
+        debug.passHist++;
 
         const prices = hist.map((e) => e.p);
         const fast = ema(prices, cfg.emaFast);
         const slow = ema(prices, cfg.emaSlow);
-        if (slow <= 0) continue;
+        if (slow <= 0) {
+            debug.skipSlow++;
+            continue;
+        }
+        debug.passSlow++;
 
         const delta = (fast - slow) / slow; // relative difference
 
@@ -513,8 +602,17 @@ function computeTrendDesires(
             else if (delta <= -cfg.trendEnter) dir = "SHORT";
         }
 
-        if (!dir) continue;
-        if (cfg.trendLongOnly && dir === "SHORT") continue;
+        if (!dir) {
+            debug.skipNoDir++;
+            continue;
+        }
+        debug.passDir++;
+
+        if (cfg.trendLongOnly && dir === "SHORT") {
+            debug.skipLongOnly++;
+            continue;
+        }
+        debug.passLongOnly++;
 
         // Confidence grows with absolute delta (capped)
         const confidence = clamp(Math.abs(delta) / (cfg.trendEnter * 2), 0, 1);
@@ -525,15 +623,28 @@ function computeTrendDesires(
         const price = dir === "LONG" ? s.ask : s.bid;
         const targetShares = price > 0 ? Math.floor(targetValue / price) : 0;
 
-        if (targetShares <= 0) continue;
+        if (targetShares <= 0) {
+            debug.skipTargetShares++;
+            continue;
+        }
+        debug.passTargetShares++;
 
         // score drives ranking; higher confidence first
         scored.push({ sym: s.sym, dir, score: confidence, targetShares });
+        debug.candidates++;
     }
 
     scored.sort((a, b) => b.score - a.score);
 
-    return capDesires(scored, cfg, cfg.trendMaxSymbolFrac, cfg.trendMaxTotalFrac);
+    return {
+        desires: capDesires(
+            scored,
+            cfg,
+            cfg.trendMaxSymbolFrac,
+            cfg.trendMaxTotalFrac
+        ),
+        debug,
+    };
 }
 
 function capDesires(
@@ -641,4 +752,3 @@ function fmt(n: number): string {
     if (n >= 1e3) return (n / 1e3).toFixed(2) + "k";
     return String(Math.floor(n));
 }
-

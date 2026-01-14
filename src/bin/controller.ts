@@ -1,5 +1,6 @@
 import type { NS } from "@ns";
 import { readJSON, writeJSON } from "/lib/ns/io.js";
+import { makeSettingsWatcher, reloadSettings } from "/lib/settings.js";
 import { checkFactionServers } from "/app/hacking/check-faction-servers.js";
 import { getDarkwebPrograms } from "/app/hacking/darkweb-programs.js";
 import {
@@ -42,6 +43,9 @@ import {
 export async function main(ns: NS): Promise<void> {
     ns.disableLog("ALL");
     ns.ui.openTail();
+
+    // Refresh settings cache on controller start
+    reloadSettings(ns);
 
     const CFG: ControllerConfig = getControllerConfig(ns);
 
@@ -127,7 +131,11 @@ export async function main(ns: NS): Promise<void> {
     // Ensure results dir exists (write a noop file)
     ns.write(`${CFG.data_dir}/keep.json`, "ok", "w");
 
+    const maybeReloadSettings = makeSettingsWatcher(ns, "/settings.json", 2000);
+    
     for (;;) {
+        // Refresh settings if changed
+        maybeReloadSettings();
         const now = Date.now();
         const hack = ns.getHackingLevel();
         const formulas = ns.fileExists("Formulas.exe", "home");
