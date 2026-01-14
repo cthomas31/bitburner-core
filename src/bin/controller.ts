@@ -123,20 +123,25 @@ export async function main(ns: NS): Promise<void> {
         statusMessages: [],
     };
 
-    const stockMgr: StockManager = makeStockManager(
-        getStockManagerConfig(ns)
-    );
+    const stockMgr: StockManager = makeStockManager(getStockManagerConfig(ns));
     await stockMgr.init(ns, ctrl);
 
     // Ensure results dir exists (write a noop file)
     ns.write(`${CFG.data_dir}/keep.json`, "ok", "w");
 
     const maybeReloadSettings = makeSettingsWatcher(ns, "/settings.json", 2000);
-    
+
     for (;;) {
-        // Refresh settings if changed
-        maybeReloadSettings();
         const now = Date.now();
+
+        // Refresh settings if changed
+        const reloadStatus = maybeReloadSettings();
+        if (reloadStatus) {
+            ctrl.statusMessages.push(
+                new Date(now).toLocaleString() + ": " + reloadStatus
+            );
+        }
+
         const hack = ns.getHackingLevel();
         const formulas = ns.fileExists("Formulas.exe", "home");
 
@@ -387,14 +392,14 @@ export async function main(ns: NS): Promise<void> {
                         1000
                     );
                     if (pid !== 0) {
-                        const key = "syscall:owned-augs-purchased"
+                        const key = "syscall:owned-augs-purchased";
                         const pid = trySyscall(
                             ns,
                             ctrl,
                             key,
                             "scripts/singularity/get-owned-augs.js",
-                            [dataPath.owned_purchased, true],
-                        )
+                            [dataPath.owned_purchased, true]
+                        );
                         if (pid !== 0) {
                             ctrl.syscallPid = pid;
                             ctrl.syscallKey = key;
@@ -412,13 +417,20 @@ export async function main(ns: NS): Promise<void> {
                 const ownedSet = new Set(ownedList);
                 ctrl.ownedSet = ownedSet;
 
-                const ownedPurchasedObj = (await readJSON(ns, dataPath.owned_purchased)) as {
+                const ownedPurchasedObj = (await readJSON(
+                    ns,
+                    dataPath.owned_purchased
+                )) as {
                     owned?: string[];
                 } | null;
                 const rawOwnedPurchased = ownedPurchasedObj?.owned;
-                const ownedPurchasedList = Array.isArray(rawOwnedPurchased) ? rawOwnedPurchased : [];
+                const ownedPurchasedList = Array.isArray(rawOwnedPurchased)
+                    ? rawOwnedPurchased
+                    : [];
                 const ownedPurchasedSet = new Set(ownedPurchasedList);
-                const pendingSet = [...ownedPurchasedSet].filter(a => !ownedSet.has(a));
+                const pendingSet = [...ownedPurchasedSet].filter(
+                    (a) => !ownedSet.has(a)
+                );
                 ctrl.pendingAugsCount = pendingSet.length;
 
                 // Decide faction AFTER we know what we own and AFTER caches can be updated.
@@ -769,7 +781,7 @@ export async function main(ns: NS): Promise<void> {
                             dataPath.work,
                             ctrl.chosenFaction,
                             CFG.factionWorkType,
-                            false
+                            false,
                         ],
                         1000
                     );

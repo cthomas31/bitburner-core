@@ -118,6 +118,7 @@ export function makeSettingsWatcher(
 
     return function maybeReloadSettings() {
         const now = Date.now();
+        let status = "";
         if (now - lastCheck < checkEveryMs) return;
         lastCheck = now;
 
@@ -132,7 +133,8 @@ export function makeSettingsWatcher(
         if (hash !== lastHash) {
             lastHash = hash;
             reloadSettings(ns);
-            ns.print(`[settings] reloaded (hash=${hash})`);
+            status = `[settings] reloaded (hash=${hash})`;
         }
+        return status;
     };
 }

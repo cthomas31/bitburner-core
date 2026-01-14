@@ -25,18 +25,17 @@ export async function main(ns: NS): Promise<boolean> {
 
     if (path !== null) {
         for (const host of path) {
-            const res = await run(ns, "connect-to-server", [host]);
+            const res = await run(ns, "connect-to-server", [host]) as { ok?: boolean } | null;
             if (res === null || res.ok === false) {
                 ns.tprint(`[find-connect-backdoor] Failed to connect to ${host}`);
-                return false;
+                break;
             }
         }
-        const res = await run(ns, "backdoor", []);
+        const res = await run(ns, "backdoor", []) as { ok?: boolean } | null;
         if (res === null || res.ok === false) {
             ns.tprint(`[find-connect-backdoor] Failed to backdoor ${target}`);
-            return false;
         }
-        ok = true;
+        ok = res?.ok ?? false;
         await run(ns, "connect-to-server", ["home"]);
     }
 
