@@ -76,17 +76,7 @@ export function makeStockManager(
                     STATE_FILE
                 )) as Partial<StockState> | null) ?? {};
 
-            const runId = `${Date.now().toString(36)}-${Math.random()
-                .toString(36)
-                .slice(2, 8)}`;
-            const log = new StockLogger(ns, runId, {
-                file: cfg.logFile,
-                flushEvery: 20,
-                flushIntervalMs: 1500,
-                minLevel: "info",
-                alsoPrint: false,
-                maxFileBytes: 2_000_000, // ~2MB
-            });
+            const runId = mkRunId();
             ctrl.stock = {
                 enabled: true,
                 lastRebalance: st.lastRebalance ?? 0,
@@ -103,23 +93,29 @@ export function makeStockManager(
 
                 equityPeak: st.equityPeak ?? 0,
                 pausedUntil: st.pausedUntil ?? 0,
-                tick: st.tick ?? 0,
+
+                tick: 0,
                 runId: runId,
-                logger: log,
+                logger: new StockLogger(ns, runId, { file: cfg.logFile }),
             };
 
-            ctrl.stock.logger.log("info", "boot", {
+            logEvent(ns, ctrl.stock, "info", "boot", {
                 version: "stockmgr@1",
                 cash: ns.getServerMoneyAvailable("home"),
+                equityPeak: ctrl.stock.equityPeak,
+                resumed: !!st.lastRebalance,
+                runId: runId,
             });
         },
 
         async tick(ns: NS, ctrl: ControllerState, now: number): Promise<void> {
             if (!ctrl.stock?.enabled) return;
-            ctrl.stock.tick = (ctrl.stock.tick ?? 0) + 1;
 
             // throttle
             if (now - (ctrl.stock.lastRebalance ?? 0) < cfg.rebalanceMs) return;
+
+            // Logical tick: counts actual rebalance passes (not scheduler calls).
+            const tick = bumpTick(ctrl.stock);
 
             const symbols = ns.stock.getSymbols();
 
@@ -134,18 +130,17 @@ export function makeStockManager(
 
             const equity = estimateEquity(ns, snapshot);
             const cash = ns.getServerMoneyAvailable("home");
-            let openCount = countOpenPositions(ns, symbols);
 
-            if (ctrl.stock.tick % 30 === 0) {
-                ctrl.stock.logger.log("info", "tick", {
-                    tick: ctrl.stock.tick,
-                    cash,
-                    equity,
-                    equityPeak: ctrl.stock.equityPeak,
-                    pausedUntil: ctrl.stock.pausedUntil ?? null,
-                    openSymbols: openCount,
-                });
-            }
+            logEvent(ns, ctrl.stock, "info", "rebalance_start", {
+                tick,
+                mode: ctrl.stock.lastMode,
+                have4S,
+                cash,
+                equity,
+                equityPeak: ctrl.stock.equityPeak,
+                pausedUntil: ctrl.stock.pausedUntil ?? null,
+                openSymbols: countOpenPositions(ns, symbols),
+            });
 
             // pause if killed recently
             if ((ctrl.stock.pausedUntil ?? 0) > now) {
@@ -154,7 +149,12 @@ export function makeStockManager(
                 ).toLocaleTimeString()}`;
                 ctrl.stock.lastRebalance = now;
                 await persist(ns, ctrl.stock, cfg);
-                ctrl.stock.logger.flush();
+                logEvent(ns, ctrl.stock, "info", "paused", {
+                    tick,
+                    pausedUntil: ctrl.stock.pausedUntil,
+                    cash,
+                    equity,
+                });
                 return;
             }
 
@@ -171,23 +171,27 @@ export function makeStockManager(
                     cfg.maxDrawdownFrac
                 )
             ) {
+                const peakBefore = ctrl.stock.equityPeak;
                 // liquidate everything, pause
-                liquidateAll(ns);
-                // After liquidation, equity is essentially cash (positions should be zero).
+                liquidateAll(ns, ctrl.stock, symbols);
                 const cashAfter = ns.getServerMoneyAvailable("home");
-                ctrl.stock.equityPeak = cashAfter; // reset peak baseline correctly
+                ctrl.stock.equityPeak = cashAfter; // reset peak baseline after kill
                 ctrl.stock.pausedUntil = now + cfg.pauseAfterKillMs;
                 ctrl.stock.lastStatus = `KILL SWITCH: drawdown ${(
                     dd * 100
                 ).toFixed(1)}% -> liquidated + paused`;
                 ctrl.stock.lastRebalance = now;
                 await persist(ns, ctrl.stock, cfg);
-                ctrl.stock.logger.log("warn", "risk_kill", {
-                    tick: ctrl.stock.tick,
+
+                logEvent(ns, ctrl.stock, "warn", "risk_kill", {
+                    tick,
+                    mode: ctrl.stock.lastMode,
                     drawdownFrac: dd,
-                    cash: cashAfter,
-                    equity,
-                    equityPeak: ctrl.stock.equityPeak,
+                    cashBefore: cash,
+                    cashAfter,
+                    equityBefore: equity,
+                    equityPeakBefore: peakBefore,
+                    pausedUntil: ctrl.stock.pausedUntil,
                     reason: "max_drawdown",
                 });
                 ctrl.stock.logger.flush();
@@ -236,48 +240,23 @@ export function makeStockManager(
 
                 // Sell long if we no longer want long
                 if (longShares > 0 && (!want || want.dir !== "LONG")) {
-                    const sold = ns.stock.sellStock(sym, longShares);
+                    execOrder(ns, ctrl.stock, symbols, "SELL", sym, longShares);
                     setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                     actions++;
-                    ctrl.stock.logger.log("info", "order", {
-                        tick: ctrl.stock.tick,
-                        sym,
-                        side: "SELL",
-                        sharesReq: longShares,
-                        sharesFilled: sold,
-                        px: ns.stock.getBidPrice(sym),
-                        cash,
-                        equity,
-                    });
-                    ctrl.stock.logger.flush();
                     continue;
                 }
 
                 // Cover short if we no longer want short
                 if (shortShares > 0 && (!want || want.dir !== "SHORT")) {
-                    if (typeof ns.stock.sellShort === "function") {
-                        const covered = ns.stock.sellShort(sym, shortShares);
-                        ctrl.stock.logger.log("info", "order", {
-                            tick: ctrl.stock.tick,
-                            sym,
-                            side: "COVER",
-                            sharesReq: shortShares,
-                            sharesFilled: covered,
-                            px: ns.stock.getBidPrice(sym),
-                            cash,
-                            equity,
-                        });
-                    }
+                    execOrder(ns, ctrl.stock, symbols, "COVER", sym, shortShares);
                     setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                     actions++;
-                    ctrl.stock.logger.flush();
                     continue;
                 }
             }
 
             // 2) Entries / resizing
-            openCount = countOpenPositions(ns, symbols);
-
+            let openCount = countOpenPositions(ns, symbols);
             for (const [sym, want] of rankDesires(desires)) {
                 if (actions >= cfg.maxActionsPerTick) break;
 
@@ -305,57 +284,31 @@ export function makeStockManager(
                             floor
                         );
                         if (safeShares > 0) {
-                            const bought = ns.stock.buyStock(sym, safeShares);
+                            execOrder(ns, ctrl.stock, symbols, "BUY", sym, safeShares);
                             setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                             actions++;
-                            if (longShares === 0) openCount++;
-                            ctrl.stock.logger.log("info", "order", {
-                                tick: ctrl.stock.tick,
-                                sym,
-                                side: "BUY",
-                                sharesReq: safeShares,
-                                sharesFilled: bought,
-                                px: ns.stock.getAskPrice(sym),
-                                cash,
-                                equity,
-                            });
+                            if (isNew) openCount++;
                         }
                     }
                 } else if (want.dir === "SHORT") {
-                    if (typeof ns.stock.buyShort !== "function") continue;
+                    // Use buyShort which is the actual Bitburner API name
+                    if (typeof ns.stock.buyShort !== "function") continue; // shorts not available yet
 
                     const shortMore = Math.max(
                         0,
                         want.targetShares - shortShares
                     );
                     if (shortMore > 0) {
-                        const floor = cashFloor(ns, equity, cfg);
-                        const safeShares = maxAffordableShortShares(
-                            ns,
-                            sym,
-                            shortMore,
-                            floor
-                        );
-                        if (safeShares > 0) {
-                            const bought = ns.stock.buyShort(sym, safeShares);
-                            setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
-                            actions++;
-                            if (shortShares === 0) openCount++;
-                            ctrl.stock.logger.log("info", "order", {
-                                tick: ctrl.stock.tick,
-                                sym,
-                                side: "SHORT",
-                                sharesReq: safeShares,
-                                sharesFilled: bought,
-                                px: ns.stock.getAskPrice(sym),
-                                cash,
-                                equity,
-                            });
-                        }
+                        execOrder(ns, ctrl.stock, symbols, "SHORT", sym, shortMore);
+                        setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
+                        actions++;
+                        if (isNew) openCount++;
                     }
                 }
             }
 
+            const cashEnd = ns.getServerMoneyAvailable("home");
+            const equityEnd = estimateEquityQuick(ns, symbols);
             ctrl.stock.lastRebalance = now;
             const debugStr = trendDebug
                 ? ` dbg(total=${trendDebug.total} cand=${trendDebug.candidates}` +
@@ -375,9 +328,22 @@ export function makeStockManager(
 
             ctrl.stock.lastStatus = `rebalance ok: mode=${
                 ctrl.stock.lastMode
-            } actions=${actions} equity=${fmt(equity)} cash=${fmt(
-                cash
+            } actions=${actions} equity=${fmt(equityEnd)} cash=${fmt(
+                cashEnd
             )} desires=${desires.size}${debugStr}`;
+
+            logEvent(ns, ctrl.stock, "info", "rebalance_end", {
+                tick,
+                mode: ctrl.stock.lastMode,
+                actions,
+                cashStart: cash,
+                cashEnd,
+                equityStart: equity,
+                equityEnd,
+                minCash: cashFloor(ns, equityEnd, cfg),
+                desires: desires.size,
+                openSymbols: countOpenPositions(ns, symbols),
+            });
 
             await persist(ns, ctrl.stock, cfg);
             ctrl.stock.logger.flush();
@@ -466,32 +432,120 @@ function maxAffordableLongShares(
     return Math.max(0, Math.min(wantShares, cap));
 }
 
-function maxAffordableShortShares(
-    ns: NS,
-    sym: string,
-    wantShares: number,
-    floorCash: number
-): number {
-    const cash = ns.getServerMoneyAvailable("home");
-    const usable = Math.max(0, cash - floorCash);
-
-    // Conservative cap: treat it like it consumes cash proportional to price.
-    // Use ask (worst case).
-    const ask = ns.stock.getAskPrice(sym);
-    if (ask <= 0) return 0;
-
-    const cap = Math.floor(usable / ask);
-    return Math.max(0, Math.min(wantShares, cap));
-}
-
 // ============== Helpers ==============
 
-function liquidateAll(ns: NS): void {
-    for (const sym of ns.stock.getSymbols()) {
+type LogLevel = "debug" | "info" | "warn" | "error";
+
+function mkRunId(): string {
+    return `${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+}
+
+function bumpTick(ctrlStock: StockState): number {
+    ctrlStock.tick += 1;
+    return ctrlStock.tick;
+}
+
+function logEvent(
+    ns: NS,
+    ctrlStock: StockState,
+    level: LogLevel,
+    event: string,
+    fields: Record<string, unknown> = {}
+): void {
+    ctrlStock.logger.log(level, event, { tick: ctrlStock.tick, ...fields });
+}
+
+function posOf(ns: NS, sym: string) {
+    const [longShares, longPx, shortShares, shortPx] = ns.stock.getPosition(sym);
+    return { longShares, longPx, shortShares, shortPx };
+}
+
+function estimateEquityQuick(ns: NS, symbols: string[]): number {
+    // Quick conservative equity: cash + longs@bid - shorts@ask
+    let eq = ns.getServerMoneyAvailable("home");
+    for (const sym of symbols) {
         const [l, , sh] = ns.stock.getPosition(sym);
-        if (l > 0) ns.stock.sellStock(sym, l);
-        if (sh > 0 && typeof ns.stock.sellShort === "function")
-            ns.stock.sellShort(sym, sh);
+        if (l > 0) eq += ns.stock.getBidPrice(sym) * l;
+        if (sh > 0) eq -= ns.stock.getAskPrice(sym) * sh;
+    }
+    return eq;
+}
+
+type OrderSide = "BUY" | "SELL" | "SHORT" | "COVER";
+
+function execOrder(
+    ns: NS,
+    ctrlStock: StockState,
+    symbols: string[],
+    side: OrderSide,
+    sym: string,
+    sharesReq: number
+): void {
+    const cashBefore = ns.getServerMoneyAvailable("home");
+    const equityBefore = estimateEquityQuick(ns, symbols);
+    const p0 = posOf(ns, sym);
+    const bid = ns.stock.getBidPrice(sym);
+    const ask = ns.stock.getAskPrice(sym);
+
+    let ret: number | null = null;
+    try {
+        switch (side) {
+            case "BUY":
+                ret = ns.stock.buyStock(sym, sharesReq);
+                break;
+            case "SELL":
+                ret = ns.stock.sellStock(sym, sharesReq);
+                break;
+            case "SHORT":
+                if (typeof ns.stock.buyShort !== "function") return;
+                ret = ns.stock.buyShort(sym, sharesReq);
+                break;
+            case "COVER":
+                if (typeof ns.stock.sellShort !== "function") return;
+                ret = ns.stock.sellShort(sym, sharesReq);
+                break;
+        }
+    } catch (e) {
+        logEvent(ns, ctrlStock, "error", "order_error", {
+            sym,
+            side,
+            sharesReq,
+            bid,
+            ask,
+            err: String(e),
+        });
+        return;
+    }
+
+    const cashAfter = ns.getServerMoneyAvailable("home");
+    const equityAfter = estimateEquityQuick(ns, symbols);
+    const p1 = posOf(ns, sym);
+
+    logEvent(ns, ctrlStock, "info", "order", {
+        sym,
+        side,
+        sharesReq,
+        ret,
+        bid,
+        ask,
+        cashBefore,
+        cashAfter,
+        equityBefore,
+        equityAfter,
+        posBefore: p0,
+        posAfter: p1,
+        deltaLong: p1.longShares - p0.longShares,
+        deltaShort: p1.shortShares - p0.shortShares,
+    });
+}
+
+function liquidateAll(ns: NS, ctrlStock: StockState, symbols: string[]): void {
+    for (const sym of symbols) {
+        const [l, , sh] = ns.stock.getPosition(sym);
+        if (l > 0) execOrder(ns, ctrlStock, symbols, "SELL", sym, l);
+        if (sh > 0) execOrder(ns, ctrlStock, symbols, "COVER", sym, sh);
     }
 }
 
@@ -571,7 +625,7 @@ function readSym(
 
 function estimateEquity(ns: NS, snapshot: SymbolSnapshot[]): number {
     // Conservative mark-to-market equity estimate.
-    // Longs valued at bid; shorts valued as ask.
+    // Longs valued at bid; shorts valued as unrealized P/L using entry shortPx vs current ask.
     // (Commission ignored here; it is handled as churn control elsewhere.)
     let eq = ns.getServerMoneyAvailable("home");
 
