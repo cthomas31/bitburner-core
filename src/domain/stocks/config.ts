@@ -1,5 +1,5 @@
 import type { NS } from "@ns";
-import { getBool, getNumber } from "/lib/settings.js";
+import { getBool, getNumber, getString } from "/lib/settings.js";
 import type { StockManagerConfig } from "/domain/stocks/types.js";
 
 export function getStockManagerConfig(ns: NS): StockManagerConfig {
@@ -7,6 +7,7 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
         rebalanceMs: getNumber(ns, "stocks.rebalanceMs"),
         cooldownMs: getNumber(ns, "stocks.cooldownMs"),
         maxActionsPerTick: getNumber(ns, "stocks.maxActionsPerTick"),
+        logFile: getString(ns, "stocks.logFile"),
 
         use4S: getBool(ns, "stocks.use4S"),
         enterLong: getNumber(ns, "stocks.forecast.enterLong"),

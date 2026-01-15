@@ -91,6 +91,7 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20_000,
     "stocks.maxActionsPerTick": 6,
+    "stocks.logFile": "/logs/stock-manager.txt",
     "stocks.use4S": true,
     "stocks.forecast.enterLong": 0.6,
     "stocks.forecast.exitLong": 0.55,

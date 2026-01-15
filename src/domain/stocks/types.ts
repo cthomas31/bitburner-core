@@ -1,10 +1,13 @@
 // ============== Type Definitions for Stocks ==============
 
+import { StockLogger } from "/domain/stocks/logger.js";
+
 export interface StockManagerConfig {
     // runtime
     rebalanceMs?: number;
     cooldownMs?: number;
     maxActionsPerTick?: number;
+    logFile?: string;
 
     // If true, auto-upgrade to forecast mode when 4S is available
     use4S?: boolean;
@@ -49,6 +52,7 @@ export interface NormalizedConfig {
     rebalanceMs: number;
     cooldownMs: number;
     maxActionsPerTick: number;
+    logFile: string;
     use4S: boolean;
     enterLong: number;
     exitLong: number;
@@ -89,6 +93,9 @@ export interface StockState {
     lastMode: string;
     equityPeak: number;
     pausedUntil: number;
+    tick: number;
+    runId: string;
+    logger: StockLogger;
 }
 
 export interface SymbolSnapshot {
