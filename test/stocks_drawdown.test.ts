@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldKillOnDrawdown } from "/app/stocks/logic.js";
+import { shouldKillOnDrawdown } from "../src/app/stocks/logic.js";
 
 describe("drawdown kill switch", () => {
     it("triggers liquidation when drawdown passes the threshold", () => {

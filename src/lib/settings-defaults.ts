@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "controller.scripts.pservManager": "/app/pserv/manager.js",
     "controller.flags.enableGangManager": false,
     "controller.flags.enablePservManager": false,
+    "controller.flags.enableDarkwebChecks": false,
+    "controller.flags.enableCheckFactionServers": false,
     "controller.hacking.batchFromHacking": 800,
     "controller.targets.switchMinImprovement": 1.15,
 

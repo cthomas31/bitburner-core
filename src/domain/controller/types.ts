@@ -27,6 +27,8 @@ export interface ControllerConfig {
 
     enableGangManager: boolean;
     enablePservManager: boolean;
+    enableDarkwebChecks: boolean;
+    enableCheckFactionServers: boolean;
 
     batchFromHacking: number;
     targetSwitchMinImprovement: number;

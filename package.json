@@ -2,7 +2,9 @@
   "name": "bitburner-typescript-template",
   "version": "2.0.0",
   "scripts": {
-    "watch:transpile": "tsc -w --preserveWatchOutput",
+    "build": "tsc -b",
+    "clean": "rimraf dist",
+    "watch:transpile": "tsc -b -w --preserveWatchOutput",
     "watch:local": "node build/watch.js",
     "watch:remote": "bitburner-filesync",
     "watch:init": "node build/init.js",
@@ -16,10 +18,12 @@
   },
   "author": "hydroflame, Hoekstraa, based on work by SlyCedix",
   "devDependencies": {
+    "@types/node": "^25.0.8",
     "@types/react": "^18.2.18",
     "@types/react-dom": "^18.2.7",
     "@typescript-eslint/eslint-plugin": "^5.35.1",
     "@typescript-eslint/parser": "^5.35.1",
+    "@vitest/coverage-v8": "^4.0.17",
     "bitburner-filesync": "^1.1.5",
     "chokidar": "^3.5.3",
     "concurrently": "^7.4.0",
@@ -29,8 +33,7 @@
     "eslint-plugin-import": "^2.32.0",
     "fast-glob": "^3.2.12",
     "sync-directory": "^5.1.7",
-    "typescript": "^4.7.4",
-    "@vitest/coverage-v8": "^2.1.3",
-    "vitest": "^2.1.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
   }
 }

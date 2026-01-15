@@ -1,7 +1,7 @@
-import type { NS } from "@ns";
+import type { NS } from "../NetscriptDefinitions";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS } from "/lib/settings-defaults.js";
-import { getNumber, reloadSettings } from "/lib/settings.js";
+import { DEFAULT_SETTINGS } from "../src/lib/settings-defaults.js";
+import { getNumber, reloadSettings } from "../src/lib/settings.js";
 import { makeFakeNS } from "./fakes/fake_ns";
 
 const spreadKey = "stocks.trend.maxSpreadFrac";

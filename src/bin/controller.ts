@@ -283,7 +283,7 @@ export async function main(ns: NS): Promise<void> {
                 }
 
                 // Darkweb syscalls
-                if (now - ctrl.lastDarkwebCheckTs > CFG.checkDarkwebEveryMs) {
+                if (CFG.enableDarkwebChecks && now - ctrl.lastDarkwebCheckTs > CFG.checkDarkwebEveryMs) {
                     if (!ns.hasTorRouter()) {
                         const key = "syscall:tor";
                         const pid = trySyscall(
@@ -302,15 +302,16 @@ export async function main(ns: NS): Promise<void> {
                         await getDarkwebPrograms(ns);
                     }
                     ctrl.lastDarkwebCheckTs = now;
-                    ctrl.statusMessages.push(
-                        new Date(ctrl.lastDarkwebCheckTs).toLocaleString() +
-                            ": Checked darkweb programs"
-                    );
+                    // ctrl.statusMessages.push(
+                    //     new Date(ctrl.lastDarkwebCheckTs).toLocaleString() +
+                    //         ": Checked darkweb programs"
+                    // );
                     break tick;
                 }
 
                 // Faction servers syscall
                 if (
+                    CFG.enableCheckFactionServers &&
                     now - ctrl.lastFactionServersCheckTs >
                     CFG.checkFactionServersEveryMs
                 ) {
@@ -339,10 +340,10 @@ export async function main(ns: NS): Promise<void> {
                         ctrl.syscallPid = pid;
                         ctrl.syscallKey = key;
                         ctrl.lastJoinInvitesTs = now;
-                        ctrl.statusMessages.push(
-                            new Date(ctrl.lastJoinInvitesTs).toLocaleString() +
-                                ": Checked faction invites"
-                        );
+                        // ctrl.statusMessages.push(
+                        //     new Date(ctrl.lastJoinInvitesTs).toLocaleString() +
+                        //         ": Checked faction invites"
+                        // );
                         break tick;
                     }
                 }

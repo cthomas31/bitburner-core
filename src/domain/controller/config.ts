@@ -1,5 +1,10 @@
 import type { NS } from "@ns";
-import { getBool, getNumber, getString, getStringArray } from "/lib/settings.js";
+import {
+    getBool,
+    getNumber,
+    getString,
+    getStringArray,
+} from "/lib/settings.js";
 import type {
     ControllerConfig,
     FactionChooserConfig,
@@ -9,7 +14,10 @@ export function getControllerConfig(ns: NS): ControllerConfig {
     const chooser: FactionChooserConfig = {
         repCacheMs: getNumber(ns, "controller.factions.chooser.repCacheMs"),
         augsCacheMs: getNumber(ns, "controller.factions.chooser.augsCacheMs"),
-        repGapPenalty: getNumber(ns, "controller.factions.chooser.repGapPenalty"),
+        repGapPenalty: getNumber(
+            ns,
+            "controller.factions.chooser.repGapPenalty"
+        ),
         buyNowBonus: getNumber(ns, "controller.factions.chooser.buyNowBonus"),
         crossFactionPrereqPenalty: getNumber(
             ns,
@@ -25,13 +33,24 @@ export function getControllerConfig(ns: NS): ControllerConfig {
         scanEveryMs: getNumber(ns, "controller.scanEveryMs"),
 
         hgwOrchestrator: getString(ns, "controller.scripts.hgwOrchestrator"),
-        batchOrchestrator: getString(ns, "controller.scripts.batchOrchestrator"),
+        batchOrchestrator: getString(
+            ns,
+            "controller.scripts.batchOrchestrator"
+        ),
         xpDeploy: getString(ns, "controller.scripts.xpDeploy"),
         gangManager: getString(ns, "controller.scripts.gangManager"),
         pservManager: getString(ns, "controller.scripts.pservManager"),
 
         enableGangManager: getBool(ns, "controller.flags.enableGangManager"),
         enablePservManager: getBool(ns, "controller.flags.enablePservManager"),
+        enableDarkwebChecks: getBool(
+            ns,
+            "controller.flags.enableDarkwebChecks"
+        ),
+        enableCheckFactionServers: getBool(
+            ns,
+            "controller.flags.enableCheckFactionServers"
+        ),
 
         batchFromHacking: getNumber(ns, "controller.hacking.batchFromHacking"),
         targetSwitchMinImprovement: getNumber(
@@ -57,7 +76,10 @@ export function getControllerConfig(ns: NS): ControllerConfig {
             ns,
             "controller.syscalls.factions.workEveryMs"
         ),
-        ownedAugsEveryMs: getNumber(ns, "controller.syscalls.augs.ownedEveryMs"),
+        ownedAugsEveryMs: getNumber(
+            ns,
+            "controller.syscalls.augs.ownedEveryMs"
+        ),
         augsFromFactionEveryMs: getNumber(
             ns,
             "controller.syscalls.augs.fromFactionEveryMs"
@@ -69,7 +91,10 @@ export function getControllerConfig(ns: NS): ControllerConfig {
             ns,
             "controller.syscalls.augs.prereqsEveryMs"
         ),
-        augBuyCooldownMs: getNumber(ns, "controller.syscalls.augs.buyCooldownMs"),
+        augBuyCooldownMs: getNumber(
+            ns,
+            "controller.syscalls.augs.buyCooldownMs"
+        ),
 
         repReachBuffer: getNumber(ns, "controller.augs.buy.repReachBuffer"),
         maxAugSpendFraction: getNumber(

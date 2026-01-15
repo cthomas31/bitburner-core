@@ -1,21 +1,12 @@
 {
-    "env": {
-        "browser": true,
-        "es2021": true
-    },
+    "env": { "browser": true, "es2021": true },
     "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
     "parser": "@typescript-eslint/parser",
-    "parserOptions": {
-        "ecmaVersion": "latest",
-        "sourceType": "module"
-    },
+    "parserOptions": { "ecmaVersion": "latest", "sourceType": "module" },
     "plugins": ["@typescript-eslint", "import", "boundaries"],
     "settings": {
         "import/resolver": {
-            "alias": {
-                "map": [["/", "./src/"]],
-                "extensions": [".ts", ".js"]
-            }
+            "alias": { "map": [["/", "./src/"]], "extensions": [".ts", ".js"] }
         },
         "boundaries/elements": [
             { "type": "bin", "pattern": "src/bin/*" },
@@ -26,13 +17,27 @@
             { "type": "scripts", "pattern": "src/scripts/**" }
         ]
     },
-
     "ignorePatterns": [
         "node_modules/**",
         "build/**",
         "dist/**",
         "NetscriptDefinitions.d.ts"
     ],
+
+    "overrides": [
+        {
+            "files": ["test/**/*.{ts,tsx,js,jsx}"],
+            "env": { "node": true },
+            "rules": {
+                "no-restricted-imports": "off"
+            }
+        },
+        {
+            "files": ["vitest.config.*", "*.config.*"],
+            "env": { "node": true }
+        }
+    ],
+
     "rules": {
         "no-restricted-imports": [
             "error",
@@ -49,12 +54,7 @@
         "import/extensions": [
             "error",
             "ignorePackages",
-            {
-                "js": "always",
-                "jsx": "always",
-                "ts": "never",
-                "tsx": "never"
-            }
+            { "js": "always", "jsx": "always", "ts": "never", "tsx": "never" }
         ],
         "boundaries/element-types": [
             "error",

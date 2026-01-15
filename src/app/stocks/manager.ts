@@ -130,6 +130,8 @@ export function makeStockManager(
             if (shouldKillOnDrawdown(ctrl.stock.equityPeak, equity, cfg.maxDrawdownFrac)) {
                 // liquidate everything, pause
                 liquidateAll(ns);
+                const equityAfter = estimateEquity(ns, snapshot);
+                ctrl.stock.equityPeak = equityAfter; // reset peak after kill
                 ctrl.stock.pausedUntil = now + cfg.pauseAfterKillMs;
                 ctrl.stock.lastStatus = `KILL SWITCH: drawdown ${(
                     dd * 100

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeTrendDesires } from "/app/stocks/logic.js";
+import { computeTrendDesires } from "../src/app/stocks/logic.js";
 import type {
     NormalizedConfig,
     SymbolSnapshot,
-} from "/domain/stocks/types.js";
+} from "../src/domain/stocks/types.js";
 
 const baseCfg: NormalizedConfig = {
     rebalanceMs: 6000,

@@ -26,19 +26,18 @@ export class FakeNS
         }
     }
 
-    read(path: string): string | null {
-        return this.files.get(path) ?? null;
+    read(path: string): string {
+        return this.files.get(path) ?? "";
     }
 
-    write(path: string, data: string | number | boolean, mode?: WriteMode) {
+    write(filename: string, data = "", mode: WriteMode = "w"): void {
         const text = String(data);
-        if (mode === "a" && this.files.has(path)) {
-            const prev = this.files.get(path) ?? "";
-            this.files.set(path, prev + text);
+        if (mode === "a" && this.files.has(filename)) {
+            const prev = this.files.get(filename) ?? "";
+            this.files.set(filename, prev + text);
         } else {
-            this.files.set(path, text);
+            this.files.set(filename, text);
         }
-        return true;
     }
 
     print(msg: unknown): void {

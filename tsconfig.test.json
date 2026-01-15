@@ -1,0 +1,17 @@
+{
+    "extends": "./tsconfig.app.json",
+    "compilerOptions": {
+        "composite": true,
+        "noEmit": true,
+
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+
+        // Node-only: do NOT pull in DOM/Browser libs
+        "lib": ["ES2022"],
+        "types": ["node", "vitest/globals"],
+        "rootDir": ".",  
+    },
+    "include": ["test/**/*.ts", "vitest.config.*", "src/**/*.ts"],
+    "exclude": ["dist", "node_modules", "src/lib/react.ts"]
+}

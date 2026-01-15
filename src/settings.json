@@ -12,6 +12,8 @@
     "controller.scripts.pservManager": "/app/pserv/manager.js",
     "controller.flags.enableGangManager": false,
     "controller.flags.enablePservManager": false,
+    "controller.flags.enableDarkwebChecks": false,
+    "controller.flags.enableCheckFactionServers": false,
     "controller.hacking.batchFromHacking": 800,
     "controller.targets.switchMinImprovement": 1.15,
 
@@ -99,7 +101,7 @@
     "stocks.cash.minCashFrac": 0.1,
     "stocks.risk.maxDrawdownFrac": 0.15,
     "stocks.risk.pauseAfterKillMs": 300000,
-    "stocks.trend.longOnly": false,
+    "stocks.trend.longOnly": true,
     "stocks.trend.maxSymbolFrac": 0.02,
     "stocks.trend.maxTotalFrac": 0.2,
     "stocks.trend.maxSpreadFrac": 0.02,
