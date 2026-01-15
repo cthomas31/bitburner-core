@@ -7,6 +7,7 @@ export interface StockManagerConfig {
     rebalanceMs?: number;
     cooldownMs?: number;
     maxActionsPerTick?: number;
+    minHoldTicks?: number;
     logFile?: string;
 
     // If true, auto-upgrade to forecast mode when 4S is available
@@ -29,6 +30,9 @@ export interface StockManagerConfig {
     maxSymbolFrac?: number;
     maxTotalFrac?: number;
     maxOpenSymbols?: number;
+    minDeltaShares?: number;
+    minOrderNotional?: number;
+    positionToleranceFrac?: number;
 
     // cash buffer
     minCashAbs?: number;
@@ -46,12 +50,15 @@ export interface StockManagerConfig {
     // other filters
     maxSpreadFrac?: number;
     minPrice?: number;
+    minSignalFrac?: number;
+    spreadEdgeBufferFrac?: number;
 }
 
 export interface NormalizedConfig {
     rebalanceMs: number;
     cooldownMs: number;
     maxActionsPerTick: number;
+    minHoldTicks: number;
     logFile: string;
     use4S: boolean;
     enterLong: number;
@@ -66,6 +73,9 @@ export interface NormalizedConfig {
     maxSymbolFrac: number;
     maxTotalFrac: number;
     maxOpenSymbols: number;
+    minDeltaShares: number;
+    minOrderNotional: number;
+    positionToleranceFrac: number;
     minCashAbs: number;
     minCashFrac: number;
     maxDrawdownFrac: number;
@@ -75,6 +85,8 @@ export interface NormalizedConfig {
     trendMaxTotalFrac: number;
     maxSpreadFrac: number;
     minPrice: number;
+    minSignalFrac: number;
+    spreadEdgeBufferFrac: number;
 }
 
 export interface PriceEntry {
@@ -96,6 +108,7 @@ export interface StockState {
     tick: number;
     runId: string;
     logger: StockLogger;
+    lastTrade?: Record<string, TradeNote>;
 }
 
 export interface SymbolSnapshot {
@@ -117,6 +130,7 @@ export interface Desire {
     dir: "LONG" | "SHORT";
     targetShares: number;
     score: number;
+    signalFrac?: number;
 }
 
 export interface ScoredCandidate {
@@ -124,6 +138,7 @@ export interface ScoredCandidate {
     dir: "LONG" | "SHORT";
     score: number;
     targetShares: number;
+    signalFrac?: number;
 }
 
 export type TrendDebug = {
@@ -150,5 +165,13 @@ export type TrendDebug = {
     maxSpreadFrac: number;
     minSpreadSym: string;
     maxSpreadSym: string;
-
+    passSignal?: number;
+    skipSignal?: number;
 };
+
+export interface TradeNote {
+    tick: number;
+    side: "BUY" | "SELL" | "SHORT" | "COVER";
+}
+
+export type OrderSide = "BUY" | "SELL" | "SHORT" | "COVER";

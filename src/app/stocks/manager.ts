@@ -21,12 +21,17 @@ import {
     Desire,
     ScoredCandidate,
     TrendDebug,
+    OrderSide,
 } from "/domain/stocks/types.js";
 import type { ControllerState } from "/domain/controller/types.js";
 import {
     capDesires,
     computeTrendDesires,
     drawdownFrac,
+    holdBlocked,
+    isWithinTolerance,
+    orderThresholdReasons,
+    spreadSignalReason,
     shouldKillOnDrawdown,
 } from "/app/stocks/logic.js";
 import { StockLogger } from "/domain/stocks/logger.js";
@@ -97,6 +102,7 @@ export function makeStockManager(
                 tick: 0,
                 runId: runId,
                 logger: new StockLogger(ns, runId, { file: cfg.logFile }),
+                lastTrade: st.lastTrade ?? {},
             };
 
             logEvent(ns, ctrl.stock, "info", "boot", {
@@ -127,6 +133,17 @@ export function makeStockManager(
             const snapshot = symbols.map((sym) =>
                 readSym(ns, sym, ctrl.stock as StockState, now, have4S, cfg)
             );
+            const snapshotBySym = new Map(snapshot.map((s) => [s.sym, s]));
+            const skipCounts: Record<string, number> = {};
+            const orderStats = {
+                spreadCost: 0,
+                commission: 0,
+                realizedPnL: 0,
+                orders: 0,
+            };
+            const recordSkip = (reason: string) => {
+                skipCounts[reason] = (skipCounts[reason] ?? 0) + 1;
+            };
 
             const equity = estimateEquity(ns, snapshot);
             const cash = ns.getServerMoneyAvailable("home");
@@ -172,6 +189,15 @@ export function makeStockManager(
                 )
             ) {
                 const peakBefore = ctrl.stock.equityPeak;
+                logEvent(ns, ctrl.stock, "warn", "circuit_breaker", {
+                    tick,
+                    mode: ctrl.stock.lastMode,
+                    equity,
+                    equityPeak: peakBefore,
+                    drawdownFrac: dd,
+                    pausedUntil: now + cfg.pauseAfterKillMs,
+                    action: "liquidate",
+                });
                 // liquidate everything, pause
                 liquidateAll(ns, ctrl.stock, symbols);
                 const cashAfter = ns.getServerMoneyAvailable("home");
@@ -237,10 +263,63 @@ export function makeStockManager(
                     shortShares = pos[2];
 
                 const want = desires.get(sym) ?? null; // {dir, targetShares, score}
+                const snap = snapshotBySym.get(sym);
+                const lastTrade = ctrl.stock.lastTrade?.[sym];
+                const spreadFrac =
+                    snap && snap.ask > 0
+                        ? (snap.ask - snap.bid) /
+                          Math.max(1, (snap.ask + snap.bid) / 2)
+                        : 1;
 
                 // Sell long if we no longer want long
                 if (longShares > 0 && (!want || want.dir !== "LONG")) {
-                    execOrder(ns, ctrl.stock, symbols, "SELL", sym, longShares);
+                    const holdCheck = holdBlocked(
+                        lastTrade,
+                        tick,
+                        cfg.minHoldTicks,
+                        "SELL"
+                    );
+                    if (holdCheck.blocked) {
+                        recordSkip("cooldown");
+                        logEvent(ns, ctrl.stock, "info", "cooldown_skip", {
+                            sym,
+                            intendedSide: "SELL",
+                            ticksSinceLastTrade: holdCheck.ticksSince,
+                            minHoldTicks: cfg.minHoldTicks,
+                        });
+                        continue;
+                    }
+
+                    const reasons = orderThresholdReasons(
+                        longShares,
+                        (snap?.bid ?? 0) * longShares,
+                        cfg
+                    );
+                    const spreadReason = want
+                        ? spreadSignalReason(spreadFrac, want.signalFrac, cfg)
+                        : null;
+                    if (spreadReason) reasons.push(spreadReason);
+
+                    if (reasons.length > 0) {
+                        reasons.forEach(recordSkip);
+                        logEvent(ns, ctrl.stock, "info", "skip_order", {
+                            sym,
+                            side: "SELL",
+                            sharesReq: longShares,
+                            reasons,
+                        });
+                        continue;
+                    }
+
+                    execOrder(
+                        ns,
+                        ctrl.stock,
+                        symbols,
+                        "SELL",
+                        sym,
+                        longShares,
+                        orderStats
+                    );
                     setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                     actions++;
                     continue;
@@ -248,7 +327,52 @@ export function makeStockManager(
 
                 // Cover short if we no longer want short
                 if (shortShares > 0 && (!want || want.dir !== "SHORT")) {
-                    execOrder(ns, ctrl.stock, symbols, "COVER", sym, shortShares);
+                    const holdCheck = holdBlocked(
+                        lastTrade,
+                        tick,
+                        cfg.minHoldTicks,
+                        "COVER"
+                    );
+                    if (holdCheck.blocked) {
+                        recordSkip("cooldown");
+                        logEvent(ns, ctrl.stock, "info", "cooldown_skip", {
+                            sym,
+                            intendedSide: "COVER",
+                            ticksSinceLastTrade: holdCheck.ticksSince,
+                            minHoldTicks: cfg.minHoldTicks,
+                        });
+                        continue;
+                    }
+
+                    const reasons = orderThresholdReasons(
+                        shortShares,
+                        (snap?.ask ?? 0) * shortShares,
+                        cfg
+                    );
+                    const spreadReason = want
+                        ? spreadSignalReason(spreadFrac, want.signalFrac, cfg)
+                        : null;
+                    if (spreadReason) reasons.push(spreadReason);
+                    if (reasons.length > 0) {
+                        reasons.forEach(recordSkip);
+                        logEvent(ns, ctrl.stock, "info", "skip_order", {
+                            sym,
+                            side: "COVER",
+                            sharesReq: shortShares,
+                            reasons,
+                        });
+                        continue;
+                    }
+
+                    execOrder(
+                        ns,
+                        ctrl.stock,
+                        symbols,
+                        "COVER",
+                        sym,
+                        shortShares,
+                        orderStats
+                    );
                     setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                     actions++;
                     continue;
@@ -266,6 +390,13 @@ export function makeStockManager(
                 const pos = ns.stock.getPosition(sym);
                 const longShares = pos[0],
                     shortShares = pos[2];
+                const snap = snapshotBySym.get(sym);
+                const spreadFrac =
+                    snap && snap.ask > 0
+                        ? (snap.ask - snap.bid) /
+                          Math.max(1, (snap.ask + snap.bid) / 2)
+                        : 1;
+                const holdInfo = ctrl.stock.lastTrade?.[sym];
 
                 // Enforce max open symbols for new positions
                 const isNew =
@@ -284,7 +415,94 @@ export function makeStockManager(
                             floor
                         );
                         if (safeShares > 0) {
-                            execOrder(ns, ctrl.stock, symbols, "BUY", sym, safeShares);
+                            const holdCheck = holdBlocked(
+                                holdInfo,
+                                tick,
+                                cfg.minHoldTicks,
+                                "BUY"
+                            );
+                            if (holdCheck.blocked) {
+                                recordSkip("cooldown");
+                                logEvent(
+                                    ns,
+                                    ctrl.stock,
+                                    "info",
+                                    "cooldown_skip",
+                                    {
+                                        sym,
+                                        intendedSide: "BUY",
+                                        ticksSinceLastTrade: holdCheck.ticksSince,
+                                        minHoldTicks: cfg.minHoldTicks,
+                                    }
+                                );
+                                continue;
+                            }
+
+                            const targetValue =
+                                (snap?.ask ?? 0) * want.targetShares;
+                            const currentValue = longShares * (snap?.bid ?? 0);
+                            if (
+                                isWithinTolerance(
+                                    currentValue,
+                                    targetValue,
+                                    cfg.positionToleranceFrac
+                                )
+                            ) {
+                                recordSkip("tolerance");
+                                logEvent(
+                                    ns,
+                                    ctrl.stock,
+                                    "info",
+                                    "position_within_tolerance",
+                                    {
+                                        sym,
+                                        dir: "LONG",
+                                        targetShares: want.targetShares,
+                                        currentShares: longShares,
+                                        toleranceFrac: cfg.positionToleranceFrac,
+                                    }
+                                );
+                                continue;
+                            }
+
+                            const reasons = orderThresholdReasons(
+                                safeShares,
+                                (snap?.ask ?? 0) * safeShares,
+                                cfg
+                            );
+                            const spreadReason = spreadSignalReason(
+                                spreadFrac,
+                                want.signalFrac,
+                                cfg
+                            );
+                            if (spreadReason) reasons.push(spreadReason);
+
+                            if (reasons.length > 0) {
+                                reasons.forEach(recordSkip);
+                                logEvent(
+                                    ns,
+                                    ctrl.stock,
+                                    "info",
+                                    "skip_order",
+                                    {
+                                        sym,
+                                        side: "BUY",
+                                        sharesReq: safeShares,
+                                        reasons,
+                                    }
+                                );
+                                continue;
+                            }
+
+                            execOrder(
+                                ns,
+                                ctrl.stock,
+                                symbols,
+                                "BUY",
+                                sym,
+                                safeShares,
+                                orderStats
+                            );
                             setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                             actions++;
                             if (isNew) openCount++;
@@ -299,7 +517,88 @@ export function makeStockManager(
                         want.targetShares - shortShares
                     );
                     if (shortMore > 0) {
-                        execOrder(ns, ctrl.stock, symbols, "SHORT", sym, shortMore);
+                        const holdCheck = holdBlocked(
+                            holdInfo,
+                            tick,
+                            cfg.minHoldTicks,
+                            "SHORT"
+                        );
+                        if (holdCheck.blocked) {
+                            recordSkip("cooldown");
+                            logEvent(ns, ctrl.stock, "info", "cooldown_skip", {
+                                sym,
+                                intendedSide: "SHORT",
+                                ticksSinceLastTrade: holdCheck.ticksSince,
+                                minHoldTicks: cfg.minHoldTicks,
+                            });
+                            continue;
+                        }
+
+                        const targetValue =
+                            (snap?.bid ?? 0) * want.targetShares;
+                        const currentValue = shortShares * (snap?.ask ?? 0);
+                        if (
+                            isWithinTolerance(
+                                currentValue,
+                                targetValue,
+                                cfg.positionToleranceFrac
+                            )
+                        ) {
+                            recordSkip("tolerance");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "info",
+                                "position_within_tolerance",
+                                {
+                                    sym,
+                                    dir: "SHORT",
+                                    targetShares: want.targetShares,
+                                    currentShares: shortShares,
+                                    toleranceFrac: cfg.positionToleranceFrac,
+                                }
+                            );
+                            continue;
+                        }
+
+                        const reasons = orderThresholdReasons(
+                            shortMore,
+                            (snap?.bid ?? 0) * shortMore,
+                            cfg
+                        );
+                        const spreadReason = spreadSignalReason(
+                            spreadFrac,
+                            want.signalFrac,
+                            cfg
+                        );
+                        if (spreadReason) reasons.push(spreadReason);
+
+                        if (reasons.length > 0) {
+                            reasons.forEach(recordSkip);
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "info",
+                                "skip_order",
+                                {
+                                    sym,
+                                    side: "SHORT",
+                                    sharesReq: shortMore,
+                                    reasons,
+                                }
+                            );
+                            continue;
+                        }
+
+                        execOrder(
+                            ns,
+                            ctrl.stock,
+                            symbols,
+                            "SHORT",
+                            sym,
+                            shortMore,
+                            orderStats
+                        );
                         setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                         actions++;
                         if (isNew) openCount++;
@@ -343,6 +642,11 @@ export function makeStockManager(
                 minCash: cashFloor(ns, equityEnd, cfg),
                 desires: desires.size,
                 openSymbols: countOpenPositions(ns, symbols),
+                skipsByReason: skipCounts,
+                totalSpreadCostEstimate: orderStats.spreadCost,
+                totalCommissionEstimate: orderStats.commission,
+                realizedPnLEstimate: orderStats.realizedPnL,
+                orders: orderStats.orders,
             });
 
             await persist(ns, ctrl.stock, cfg);
@@ -372,6 +676,7 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         // runtime
         rebalanceMs: c.rebalanceMs ?? 6000,
         cooldownMs: c.cooldownMs ?? 20000,
+        minHoldTicks: c.minHoldTicks ?? 15,
         maxActionsPerTick: c.maxActionsPerTick ?? 6,
         logFile: c.logFile ?? "/logs/stock-manager.txt",
 
@@ -395,6 +700,9 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         maxSymbolFrac: c.maxSymbolFrac ?? 0.1,
         maxTotalFrac: c.maxTotalFrac ?? 0.8,
         maxOpenSymbols: c.maxOpenSymbols ?? 8,
+        minDeltaShares: c.minDeltaShares ?? 10,
+        minOrderNotional: c.minOrderNotional ?? 5_000_000,
+        positionToleranceFrac: c.positionToleranceFrac ?? 0.05,
 
         // cash buffer
         minCashAbs: c.minCashAbs ?? 40_000_000,
@@ -410,6 +718,8 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         trendMaxTotalFrac: c.trendMaxTotalFrac ?? 0.2, // 20% total exposure
         maxSpreadFrac: c.maxSpreadFrac ?? 0.003, // skip if spread > 0.3%
         minPrice: c.minPrice ?? 5_000, // skip cheap noisy tickers
+        minSignalFrac: c.minSignalFrac ?? 0.004,
+        spreadEdgeBufferFrac: c.spreadEdgeBufferFrac ?? 0.001,
     };
 }
 
@@ -475,13 +785,21 @@ function estimateEquityQuick(ns: NS, symbols: string[]): number {
 
 type OrderSide = "BUY" | "SELL" | "SHORT" | "COVER";
 
+type TickStats = {
+    spreadCost: number;
+    commission: number;
+    realizedPnL: number;
+    orders: number;
+};
+
 function execOrder(
     ns: NS,
     ctrlStock: StockState,
     symbols: string[],
     side: OrderSide,
     sym: string,
-    sharesReq: number
+    sharesReq: number,
+    stats?: TickStats
 ): void {
     const cashBefore = ns.getServerMoneyAvailable("home");
     const equityBefore = estimateEquityQuick(ns, symbols);
@@ -522,6 +840,20 @@ function execOrder(
     const cashAfter = ns.getServerMoneyAvailable("home");
     const equityAfter = estimateEquityQuick(ns, symbols);
     const p1 = posOf(ns, sym);
+    const spreadCost = Math.abs(ask - bid) * sharesReq;
+    const commission =
+        typeof ns.stock.getCommission === "function"
+            ? ns.stock.getCommission()
+            : 0;
+    if (stats) {
+        stats.spreadCost += spreadCost;
+        stats.commission += commission;
+        stats.realizedPnL += equityAfter - equityBefore;
+        stats.orders += 1;
+    }
+
+    if (!ctrlStock.lastTrade) ctrlStock.lastTrade = {};
+    ctrlStock.lastTrade[sym] = { tick: ctrlStock.tick, side };
 
     logEvent(ns, ctrlStock, "info", "order", {
         sym,
@@ -530,6 +862,8 @@ function execOrder(
         ret,
         bid,
         ask,
+        spreadCost,
+        commission,
         cashBefore,
         cashAfter,
         equityBefore,
@@ -674,6 +1008,12 @@ function computeForecastDesires(
 
         if (!dir) continue;
 
+        // Spread-aware filter: require signal to exceed spread + buffer
+        const spreadFrac =
+            s.ask > 0 ? (s.ask - s.bid) / Math.max(1, (s.ask + s.bid) / 2) : 1;
+        const spreadReason = spreadSignalReason(spreadFrac, absEdge, cfg);
+        if (spreadReason) continue;
+
         // Sizing: confidence + volatility penalty
         const confidence = clamp(absEdge / 0.15, 0, 1);
         const volPenalty = clamp((s.vol ?? 0.05) / 0.05, 0.5, 2.0);
@@ -689,7 +1029,13 @@ function computeForecastDesires(
         // Score by signal strength per volatility
         const score = absEdge / Math.max(1e-6, s.vol ?? 0.05);
 
-        scored.push({ sym: s.sym, dir, score, targetShares });
+        scored.push({
+            sym: s.sym,
+            dir,
+            score,
+            targetShares,
+            signalFrac: absEdge,
+        });
     }
 
     scored.sort((a, b) => b.score - a.score);
@@ -742,6 +1088,7 @@ async function persist(
         entry: stockState.entry ?? {},
         equityPeak: stockState.equityPeak ?? 0,
         pausedUntil: stockState.pausedUntil ?? 0,
+        lastTrade: stockState.lastTrade ?? {},
     };
 
     writeJSON(ns, STATE_FILE, toSave);

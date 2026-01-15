@@ -5,6 +5,7 @@ import {
     SymbolSnapshot,
     TrendDebug,
 } from "/domain/stocks/types.js";
+import type { OrderSide, TradeNote } from "/domain/stocks/types.js";
 
 export function computeTrendDesires(
     snapshot: SymbolSnapshot[],
@@ -81,6 +82,16 @@ export function computeTrendDesires(
         debug.passSlow++;
 
         const delta = (fast - slow) / slow;
+        const spreadReason = spreadSignalReason(
+            spreadFrac,
+            Math.abs(delta),
+            cfg
+        );
+        if (spreadReason) {
+            debug.skipSignal = (debug.skipSignal ?? 0) + 1;
+            continue;
+        }
+        debug.passSignal = (debug.passSignal ?? 0) + 1;
 
         const holdingLong = s.longShares > 0;
         const holdingShort = s.shortShares > 0;
@@ -120,7 +131,13 @@ export function computeTrendDesires(
         }
         debug.passTargetShares++;
 
-        scored.push({ sym: s.sym, dir, score: confidence, targetShares });
+        scored.push({
+            sym: s.sym,
+            dir,
+            score: confidence,
+            targetShares,
+            signalFrac: Math.abs(delta),
+        });
         debug.candidates++;
     }
 
@@ -158,6 +175,7 @@ export function capDesires(
             dir: c.dir,
             targetShares: c.targetShares,
             score: c.score,
+            signalFrac: c.signalFrac,
         });
 
         open++;
@@ -191,4 +209,50 @@ export function ema(arr: number[], period: number): number {
 
 function clamp(x: number, lo: number, hi: number): number {
     return Math.max(lo, Math.min(hi, x));
+}
+
+export function orderThresholdReasons(
+    deltaShares: number,
+    notional: number,
+    cfg: NormalizedConfig
+): string[] {
+    const reasons: string[] = [];
+    if (Math.abs(deltaShares) < cfg.minDeltaShares) reasons.push("min_shares");
+    if (notional < cfg.minOrderNotional) reasons.push("min_notional");
+    return reasons;
+}
+
+export function isWithinTolerance(
+    currentValue: number,
+    targetValue: number,
+    toleranceFrac: number
+): boolean {
+    const targetAbs = Math.abs(targetValue);
+    if (targetAbs <= 0) return false;
+    const diff = Math.abs(currentValue - targetValue);
+    return diff <= targetAbs * toleranceFrac;
+}
+
+export function holdBlocked(
+    last: TradeNote | undefined,
+    tick: number,
+    minHoldTicks: number,
+    side: OrderSide
+): { blocked: boolean; ticksSince: number } {
+    if (!last) return { blocked: false, ticksSince: Infinity };
+    const ticksSince = tick - last.tick;
+    if (ticksSince >= minHoldTicks) return { blocked: false, ticksSince };
+    if (last.side === side) return { blocked: false, ticksSince };
+    return { blocked: true, ticksSince };
+}
+
+export function spreadSignalReason(
+    spreadFrac: number,
+    signalFrac: number | undefined,
+    cfg: NormalizedConfig
+): string | null {
+    if (signalFrac === undefined || signalFrac < cfg.minSignalFrac)
+        return "signal_too_weak";
+    if (signalFrac < spreadFrac + cfg.spreadEdgeBufferFrac) return "spread";
+    return null;
 }

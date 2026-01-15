@@ -91,6 +91,7 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20_000,
     "stocks.maxActionsPerTick": 6,
+    "stocks.minHoldTicks": 15,
     "stocks.logFile": "/logs/stock-manager.txt",
     "stocks.use4S": true,
     "stocks.forecast.enterLong": 0.6,
@@ -105,6 +106,9 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "stocks.sizing.maxSymbolFrac": 0.1,
     "stocks.sizing.maxTotalFrac": 0.8,
     "stocks.sizing.maxOpenSymbols": 8,
+    "stocks.sizing.minDeltaShares": 10,
+    "stocks.sizing.minOrderNotional": 5_000_000,
+    "stocks.sizing.positionToleranceFrac": 0.05,
     "stocks.cash.minCashAbs": 40_000_000,
     "stocks.cash.minCashFrac": 0.1,
     "stocks.risk.maxDrawdownFrac": 0.15,
@@ -114,6 +118,8 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "stocks.trend.maxTotalFrac": 0.2,
     "stocks.trend.maxSpreadFrac": 0.003,
     "stocks.trend.minPrice": 5000,
+    "stocks.trend.minSignalFrac": 0.004,
+    "stocks.trend.spreadEdgeBufferFrac": 0.001,
 
     // Batcher
     "batcher.tickMs": 125,

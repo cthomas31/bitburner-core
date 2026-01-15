@@ -7,6 +7,7 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
         rebalanceMs: getNumber(ns, "stocks.rebalanceMs"),
         cooldownMs: getNumber(ns, "stocks.cooldownMs"),
         maxActionsPerTick: getNumber(ns, "stocks.maxActionsPerTick"),
+        minHoldTicks: getNumber(ns, "stocks.minHoldTicks"),
         logFile: getString(ns, "stocks.logFile"),
 
         use4S: getBool(ns, "stocks.use4S"),
@@ -24,6 +25,12 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
         maxSymbolFrac: getNumber(ns, "stocks.sizing.maxSymbolFrac"),
         maxTotalFrac: getNumber(ns, "stocks.sizing.maxTotalFrac"),
         maxOpenSymbols: getNumber(ns, "stocks.sizing.maxOpenSymbols"),
+        minDeltaShares: getNumber(ns, "stocks.sizing.minDeltaShares"),
+        minOrderNotional: getNumber(ns, "stocks.sizing.minOrderNotional"),
+        positionToleranceFrac: getNumber(
+            ns,
+            "stocks.sizing.positionToleranceFrac"
+        ),
 
         minCashAbs: getNumber(ns, "stocks.cash.minCashAbs"),
         minCashFrac: getNumber(ns, "stocks.cash.minCashFrac"),
@@ -36,6 +43,11 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
         trendMaxTotalFrac: getNumber(ns, "stocks.trend.maxTotalFrac"),
         maxSpreadFrac: getNumber(ns, "stocks.trend.maxSpreadFrac"),
         minPrice: getNumber(ns, "stocks.trend.minPrice"),
+        minSignalFrac: getNumber(ns, "stocks.trend.minSignalFrac"),
+        spreadEdgeBufferFrac: getNumber(
+            ns,
+            "stocks.trend.spreadEdgeBufferFrac"
+        ),
     };
 }
 

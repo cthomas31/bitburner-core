@@ -9,6 +9,7 @@ const baseCfg: NormalizedConfig = {
     rebalanceMs: 6000,
     cooldownMs: 20_000,
     maxActionsPerTick: 6,
+    minHoldTicks: 15,
     use4S: false,
     enterLong: 0.6,
     exitLong: 0.55,
@@ -22,6 +23,9 @@ const baseCfg: NormalizedConfig = {
     maxSymbolFrac: 0.1,
     maxTotalFrac: 0.8,
     maxOpenSymbols: 2,
+    minDeltaShares: 10,
+    minOrderNotional: 5_000_000,
+    positionToleranceFrac: 0.05,
     minCashAbs: 40_000_000,
     minCashFrac: 0.1,
     maxDrawdownFrac: 0.15,
@@ -31,6 +35,8 @@ const baseCfg: NormalizedConfig = {
     trendMaxTotalFrac: 0.25,
     maxSpreadFrac: 0.03,
     minPrice: 1,
+    minSignalFrac: 0.004,
+    spreadEdgeBufferFrac: 0.001,
 };
 
 const equity = 100_000;
