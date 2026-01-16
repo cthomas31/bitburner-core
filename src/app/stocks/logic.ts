@@ -169,6 +169,7 @@ export function capDesires(
         if (open >= cfg.maxOpenSymbols) break;
 
         const frac = perSymbolFrac;
+        if (c.targetShares <= 0) continue;
         if (usedFrac + frac > totalCap) continue;
 
         desires.set(c.sym, {
@@ -214,11 +215,14 @@ function clamp(x: number, lo: number, hi: number): number {
 export function orderThresholdReasons(
     deltaShares: number,
     notional: number,
-    cfg: NormalizedConfig
+    cfg: NormalizedConfig,
+    side?: OrderSide
 ): string[] {
     const reasons: string[] = [];
     if (Math.abs(deltaShares) < cfg.minDeltaShares) reasons.push("min_shares");
-    if (notional < cfg.minOrderNotional) reasons.push("min_notional");
+    const applyMinNotional = !side || (side !== "SELL" && side !== "COVER");
+    if (applyMinNotional && notional < cfg.minOrderNotional)
+        reasons.push("min_notional");
     return reasons;
 }
 

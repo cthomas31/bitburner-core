@@ -293,7 +293,8 @@ export function makeStockManager(
                     const reasons = orderThresholdReasons(
                         longShares,
                         (snap?.bid ?? 0) * longShares,
-                        cfg
+                        cfg,
+                        "SELL"
                     );
                     const spreadReason = want
                         ? spreadSignalReason(spreadFrac, want.signalFrac, cfg)
@@ -351,7 +352,8 @@ export function makeStockManager(
                     const reasons = orderThresholdReasons(
                         shortShares,
                         (snap?.ask ?? 0) * shortShares,
-                        cfg
+                        cfg,
+                        "COVER"
                     );
                     const spreadReason = want
                         ? spreadSignalReason(spreadFrac, want.signalFrac, cfg)
@@ -389,6 +391,13 @@ export function makeStockManager(
 
             // 2) Entries / resizing
             let openCount = countOpenPositions(ns, symbols);
+            let grossExposure = grossExposureValue(ns, symbols);
+            let equityForSizing = estimateEquityQuick(ns, symbols);
+            let cashForSizing = ns.getServerMoneyAvailable("home");
+            const perSymbolCap = have4S
+                ? cfg.maxSymbolFrac
+                : cfg.trendMaxSymbolFrac;
+            const totalCap = have4S ? cfg.maxTotalFrac : cfg.trendMaxTotalFrac;
             for (const [sym, want] of rankDesires(desires)) {
                 if (actions >= cfg.maxActionsPerTick) break;
 
@@ -415,108 +424,201 @@ export function makeStockManager(
                 if (want.dir === "LONG") {
                     const buyMore = Math.max(0, want.targetShares - longShares);
                     if (buyMore > 0) {
-                        const floor = cashFloor(ns, equity, cfg);
-                        const safeShares = maxAffordableLongShares(
-                            ns,
-                            sym,
-                            buyMore,
-                            floor
+                        const holdCheck = holdBlocked(
+                            holdInfo,
+                            tick,
+                            cfg.minHoldTicks,
+                            "BUY"
                         );
-                        if (safeShares > 0) {
-                            const holdCheck = holdBlocked(
-                                holdInfo,
-                                tick,
-                                cfg.minHoldTicks,
-                                "BUY"
+                        if (holdCheck.blocked) {
+                            recordSkip("cooldown");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "info",
+                                "cooldown_skip",
+                                {
+                                    sym,
+                                    intendedSide: "BUY",
+                                    ticksSinceLastTrade: holdCheck.ticksSince,
+                                    minHoldTicks: cfg.minHoldTicks,
+                                }
                             );
-                            if (holdCheck.blocked) {
-                                recordSkip("cooldown");
-                                logEvent(
-                                    ns,
-                                    ctrl.stock,
-                                    "info",
-                                    "cooldown_skip",
-                                    {
-                                        sym,
-                                        intendedSide: "BUY",
-                                        ticksSinceLastTrade: holdCheck.ticksSince,
-                                        minHoldTicks: cfg.minHoldTicks,
-                                    }
-                                );
-                                continue;
+                            continue;
+                        }
+
+                        const targetValue =
+                            (snap?.ask ?? 0) * want.targetShares;
+                        const currentValue = longShares * (snap?.bid ?? 0);
+                        if (
+                            isWithinTolerance(
+                                currentValue,
+                                targetValue,
+                                cfg.positionToleranceFrac
+                            )
+                        ) {
+                            recordSkip("tolerance");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "info",
+                                "position_within_tolerance",
+                                {
+                                    sym,
+                                    dir: "LONG",
+                                    targetShares: want.targetShares,
+                                    currentShares: longShares,
+                                    toleranceFrac: cfg.positionToleranceFrac,
+                                }
+                            );
+                            continue;
+                        }
+
+                        const priceUsed = snap?.ask ?? 0;
+                        const minNotional = cfg.minOrderNotional;
+                        const floor = cashFloor(ns, equityForSizing, cfg);
+                        const deployableCash = Math.max(
+                            0,
+                            cashForSizing - floor
+                        );
+                        const minSharesToClear =
+                            priceUsed > 0
+                                ? Math.ceil(minNotional / priceUsed)
+                                : 0;
+                        const sharesComputed = buyMore;
+                        const sharesBumpedTo =
+                            priceUsed > 0 &&
+                            sharesComputed * priceUsed < minNotional
+                                ? Math.max(sharesComputed, minSharesToClear)
+                                : sharesComputed;
+
+                        const caps: { label: string; shares: number }[] = [];
+                        const maxStockCap =
+                            snap?.maxShares !== undefined
+                                ? Math.max(0, snap.maxShares - longShares)
+                                : Number.POSITIVE_INFINITY;
+                        caps.push({ label: "max_shares", shares: maxStockCap });
+
+                        const remainingSymbolValue = Math.max(
+                            0,
+                            equityForSizing * perSymbolCap -
+                                priceUsed * longShares
+                        );
+                        caps.push({
+                            label: "max_symbol_cap",
+                            shares:
+                                priceUsed > 0
+                                    ? Math.floor(
+                                          remainingSymbolValue / priceUsed
+                                      )
+                                    : 0,
+                        });
+
+                        const remainingTotalValue = Math.max(
+                            0,
+                            equityForSizing * totalCap - grossExposure
+                        );
+                        caps.push({
+                            label: "max_total_cap",
+                            shares:
+                                priceUsed > 0
+                                    ? Math.floor(remainingTotalValue / priceUsed)
+                                    : 0,
+                        });
+
+                        caps.push({
+                            label: "cash_floor",
+                            shares:
+                                priceUsed > 0
+                                    ? Math.floor(deployableCash / priceUsed)
+                                    : 0,
+                        });
+
+                        let sharesFinal = sharesBumpedTo;
+                        let bindingConstraint: string | null = null;
+                        for (const cap of caps) {
+                            const capShares = Math.max(
+                                0,
+                                Math.floor(cap.shares)
+                            );
+                            if (capShares < sharesFinal) {
+                                sharesFinal = capShares;
+                                bindingConstraint = cap.label;
+                            }
+                        }
+                        const sharesAffordableCap = sharesFinal;
+                        const notionalFinal = priceUsed * sharesFinal;
+
+                        const reasons = orderThresholdReasons(
+                            sharesFinal,
+                            notionalFinal,
+                            cfg,
+                            "BUY"
+                        );
+                        const spreadReason = spreadSignalReason(
+                            spreadFrac,
+                            want.signalFrac,
+                            cfg
+                        );
+                        if (spreadReason) reasons.push(spreadReason);
+
+                        if (reasons.includes("min_notional") && !bindingConstraint) {
+                            bindingConstraint = "min_notional";
+                        }
+
+                        if (reasons.length > 0) {
+                            reasons.forEach(recordSkip);
+                            const logFields: Record<string, unknown> = {
+                                sym,
+                                price: priceUsed,
+                                notional: notionalFinal,
+                                minNotional,
+                                deployableCash,
+                                side: "BUY",
+                                sharesReq: sharesFinal,
+                                reasons,
+                            };
+                            if (reasons.includes("min_notional")) {
+                                logFields.priceUsed = priceUsed;
+                                logFields.sharesComputed = sharesComputed;
+                                logFields.sharesBumpedTo = sharesBumpedTo;
+                                logFields.sharesAffordableCap =
+                                    sharesAffordableCap;
+                                logFields.sharesFinal = sharesFinal;
+                                logFields.notionalFinal = notionalFinal;
+                                logFields.bindingConstraint =
+                                    bindingConstraint ?? "min_notional";
                             }
 
-                            const targetValue =
-                                (snap?.ask ?? 0) * want.targetShares;
-                            const currentValue = longShares * (snap?.bid ?? 0);
-                            if (
-                                isWithinTolerance(
-                                    currentValue,
-                                    targetValue,
-                                    cfg.positionToleranceFrac
-                                )
-                            ) {
-                                recordSkip("tolerance");
-                                logEvent(
-                                    ns,
-                                    ctrl.stock,
-                                    "info",
-                                    "position_within_tolerance",
-                                    {
-                                        sym,
-                                        dir: "LONG",
-                                        targetShares: want.targetShares,
-                                        currentShares: longShares,
-                                        toleranceFrac: cfg.positionToleranceFrac,
-                                    }
-                                );
-                                continue;
-                            }
-
-                            const reasons = orderThresholdReasons(
-                                safeShares,
-                                (snap?.ask ?? 0) * safeShares,
-                                cfg
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "info",
+                                "skip_order",
+                                logFields
                             );
-                            const spreadReason = spreadSignalReason(
-                                spreadFrac,
-                                want.signalFrac,
-                                cfg
-                            );
-                            if (spreadReason) reasons.push(spreadReason);
+                            continue;
+                        }
 
-                            if (reasons.length > 0) {
-                                reasons.forEach(recordSkip);
-                                logEvent(
-                                    ns,
-                                    ctrl.stock,
-                                    "info",
-                                    "skip_order",
-                                    {
-                                        sym,
-                                        price: snap?.ask ?? 0,
-                                        notional: (snap?.ask ?? 0) * safeShares,
-                                        minNotional: cfg.minOrderNotional,
-                                        deployableCash: cash - cashFloor(ns, equity, cfg),
-                                        side: "BUY",
-                                        sharesReq: safeShares,
-                                        reasons,
-                                    }
-                                );
-                                continue;
-                            }
-
+                        if (sharesFinal > 0) {
                             execOrder(
                                 ns,
                                 ctrl.stock,
                                 symbols,
                                 "BUY",
                                 sym,
-                                safeShares,
+                                sharesFinal,
                                 orderStats
                             );
                             setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                             actions++;
+                            grossExposure += priceUsed * sharesFinal;
+                            cashForSizing =
+                                ns.getServerMoneyAvailable("home");
+                            equityForSizing = estimateEquityQuick(
+                                ns,
+                                symbols
+                            );
                             if (isNew) openCount++;
                         }
                     }
@@ -576,7 +678,8 @@ export function makeStockManager(
                         const reasons = orderThresholdReasons(
                             shortMore,
                             (snap?.bid ?? 0) * shortMore,
-                            cfg
+                            cfg,
+                            "SHORT"
                         );
                         const spreadReason = spreadSignalReason(
                             spreadFrac,
@@ -597,7 +700,9 @@ export function makeStockManager(
                                     price: snap?.bid ?? 0,
                                     notional: (snap?.bid ?? 0) * shortMore,
                                     minNotional: cfg.minOrderNotional,
-                                    deployableCash: cash - cashFloor(ns, equity, cfg),
+                                    deployableCash:
+                                        cashForSizing -
+                                        cashFloor(ns, equityForSizing, cfg),
                                     side: "SHORT",
                                     sharesReq: shortMore,
                                     reasons,
@@ -617,6 +722,9 @@ export function makeStockManager(
                         );
                         setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
                         actions++;
+                        grossExposure += (snap?.bid ?? 0) * shortMore;
+                        cashForSizing = ns.getServerMoneyAvailable("home");
+                        equityForSizing = estimateEquityQuick(ns, symbols);
                         if (isNew) openCount++;
                     }
                 }
@@ -744,20 +852,6 @@ function cashFloor(ns: NS, equity: number, cfg: NormalizedConfig): number {
     return Math.max(cfg.minCashAbs, equity * cfg.minCashFrac);
 }
 
-function maxAffordableLongShares(
-    ns: NS,
-    sym: string,
-    wantShares: number,
-    floorCash: number
-): number {
-    const cash = ns.getServerMoneyAvailable("home");
-    const usable = Math.max(0, cash - floorCash);
-    const ask = ns.stock.getAskPrice(sym);
-    if (ask <= 0) return 0;
-    const cap = Math.floor(usable / ask);
-    return Math.max(0, Math.min(wantShares, cap));
-}
-
 // ============== Helpers ==============
 
 type LogLevel = "debug" | "info" | "warn" | "error";
@@ -797,6 +891,16 @@ function estimateEquityQuick(ns: NS, symbols: string[]): number {
         if (sh > 0) eq -= ns.stock.getAskPrice(sym) * sh;
     }
     return eq;
+}
+
+function grossExposureValue(ns: NS, symbols: string[]): number {
+    let gross = 0;
+    for (const sym of symbols) {
+        const [l, , sh] = ns.stock.getPosition(sym);
+        gross += ns.stock.getAskPrice(sym) * l;
+        gross += ns.stock.getBidPrice(sym) * sh;
+    }
+    return gross;
 }
 
 type TickStats = {
@@ -1036,6 +1140,7 @@ function computeForecastDesires(
             0,
             s.maxShares
         );
+        if (targetShares <= 0) continue;
 
         // Score by signal strength per volatility
         const score = absEdge / Math.max(1e-6, s.vol ?? 0.05);
