@@ -51,6 +51,8 @@ export function getControllerConfig(ns: NS): ControllerConfig {
             ns,
             "controller.flags.enableCheckFactionServers"
         ),
+        enableAugs: getBool(ns, "controller.augs.enable"),
+        enableFactions: getBool(ns, "controller.factions.enable"),
 
         batchFromHacking: getNumber(ns, "controller.hacking.batchFromHacking"),
         targetSwitchMinImprovement: getNumber(

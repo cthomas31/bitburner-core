@@ -29,6 +29,8 @@ export interface ControllerConfig {
     enablePservManager: boolean;
     enableDarkwebChecks: boolean;
     enableCheckFactionServers: boolean;
+    enableAugs: boolean;
+    enableFactions: boolean;
 
     batchFromHacking: number;
     targetSwitchMinImprovement: number;

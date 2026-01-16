@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "controller.flags.enablePservManager": false,
     "controller.flags.enableDarkwebChecks": false,
     "controller.flags.enableCheckFactionServers": false,
+    "controller.augs.enable": true,
+    "controller.factions.enable": true,
     "controller.hacking.batchFromHacking": 800,
     "controller.targets.switchMinImprovement": 1.15,
 
