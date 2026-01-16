@@ -304,6 +304,10 @@ export function makeStockManager(
                         reasons.forEach(recordSkip);
                         logEvent(ns, ctrl.stock, "info", "skip_order", {
                             sym,
+                            price: snap?.bid ?? 0,
+                            notional: (snap?.bid ?? 0) * longShares,
+                            minNotional: cfg.minOrderNotional,
+                            deployableCash: cash - cashFloor(ns, equity, cfg),
                             side: "SELL",
                             sharesReq: longShares,
                             reasons,
@@ -358,6 +362,10 @@ export function makeStockManager(
                         logEvent(ns, ctrl.stock, "info", "skip_order", {
                             sym,
                             side: "COVER",
+                            price: snap?.ask ?? 0,
+                            notional: (snap?.ask ?? 0) * shortShares,
+                            minNotional: cfg.minOrderNotional,
+                            deployableCash: cash - cashFloor(ns, equity, cfg),
                             sharesReq: shortShares,
                             reasons,
                         });
@@ -486,6 +494,10 @@ export function makeStockManager(
                                     "skip_order",
                                     {
                                         sym,
+                                        price: snap?.ask ?? 0,
+                                        notional: (snap?.ask ?? 0) * safeShares,
+                                        minNotional: cfg.minOrderNotional,
+                                        deployableCash: cash - cashFloor(ns, equity, cfg),
                                         side: "BUY",
                                         sharesReq: safeShares,
                                         reasons,
@@ -582,6 +594,10 @@ export function makeStockManager(
                                 "skip_order",
                                 {
                                     sym,
+                                    price: snap?.bid ?? 0,
+                                    notional: (snap?.bid ?? 0) * shortMore,
+                                    minNotional: cfg.minOrderNotional,
+                                    deployableCash: cash - cashFloor(ns, equity, cfg),
                                     side: "SHORT",
                                     sharesReq: shortMore,
                                     reasons,
@@ -783,8 +799,6 @@ function estimateEquityQuick(ns: NS, symbols: string[]): number {
     return eq;
 }
 
-type OrderSide = "BUY" | "SELL" | "SHORT" | "COVER";
-
 type TickStats = {
     spreadCost: number;
     commission: number;
@@ -841,10 +855,7 @@ function execOrder(
     const equityAfter = estimateEquityQuick(ns, symbols);
     const p1 = posOf(ns, sym);
     const spreadCost = Math.abs(ask - bid) * sharesReq;
-    const commission =
-        typeof ns.stock.getCommission === "function"
-            ? ns.stock.getCommission()
-            : 0;
+    const commission = ns.stock.getConstants().StockMarketCommission;
     if (stats) {
         stats.spreadCost += spreadCost;
         stats.commission += commission;
