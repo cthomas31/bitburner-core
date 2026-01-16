@@ -85,6 +85,8 @@
 
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20000,
+    "stocks.cooldownTicks": 0,
+    "stocks.decisionIntervalTicks": 1,
     "stocks.maxActionsPerTick": 6,
     "stocks.logFile": "/logs/stock-manager.txt",
     "stocks.use4S": true,

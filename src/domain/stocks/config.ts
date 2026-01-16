@@ -6,6 +6,8 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
     return {
         rebalanceMs: getNumber(ns, "stocks.rebalanceMs"),
         cooldownMs: getNumber(ns, "stocks.cooldownMs"),
+        cooldownTicks: getNumber(ns, "stocks.cooldownTicks"),
+        decisionIntervalTicks: getNumber(ns, "stocks.decisionIntervalTicks"),
         maxActionsPerTick: getNumber(ns, "stocks.maxActionsPerTick"),
         minHoldTicks: getNumber(ns, "stocks.minHoldTicks"),
         logFile: getString(ns, "stocks.logFile"),

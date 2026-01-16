@@ -6,6 +6,8 @@ export interface StockManagerConfig {
     // runtime
     rebalanceMs?: number;
     cooldownMs?: number;
+    cooldownTicks?: number;
+    decisionIntervalTicks?: number;
     maxActionsPerTick?: number;
     minHoldTicks?: number;
     logFile?: string;
@@ -57,6 +59,8 @@ export interface StockManagerConfig {
 export interface NormalizedConfig {
     rebalanceMs: number;
     cooldownMs: number;
+    cooldownTicks: number;
+    decisionIntervalTicks: number;
     maxActionsPerTick: number;
     minHoldTicks: number;
     logFile: string;
@@ -99,6 +103,7 @@ export interface StockState {
     reason?: string;
     lastRebalance: number;
     cooldownUntil: Record<string, number>;
+    positionsBySymbol?: Record<string, SymbolPositionState>;
     prices: Record<string, PriceEntry[]>;
     entry: Record<string, number>;
     lastStatus: string;
@@ -109,6 +114,15 @@ export interface StockState {
     runId: string;
     logger: StockLogger;
     lastTrade?: Record<string, TradeNote>;
+}
+
+export type PositionMode = "FLAT" | "LONG" | "SHORT";
+
+export interface SymbolPositionState {
+    mode: PositionMode;
+    enteredTick?: number;
+    lastDecisionTick?: number;
+    cooldownUntilTick?: number;
 }
 
 export interface SymbolSnapshot {

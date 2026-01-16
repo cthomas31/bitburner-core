@@ -22,6 +22,7 @@ import {
     ScoredCandidate,
     TrendDebug,
     OrderSide,
+    SymbolPositionState,
 } from "/domain/stocks/types.js";
 import type { ControllerState } from "/domain/controller/types.js";
 import {
@@ -86,6 +87,7 @@ export function makeStockManager(
                 enabled: true,
                 lastRebalance: st.lastRebalance ?? 0,
                 cooldownUntil: st.cooldownUntil ?? {}, // sym -> ms
+                positionsBySymbol: st.positionsBySymbol ?? {}, // sym -> position state
 
                 // Trend mode history store: sym -> [{t,p}, ...]
                 prices: st.prices ?? {},
@@ -99,11 +101,13 @@ export function makeStockManager(
                 equityPeak: st.equityPeak ?? 0,
                 pausedUntil: st.pausedUntil ?? 0,
 
-                tick: 0,
+                tick: st.tick ?? 0,
                 runId: runId,
                 logger: new StockLogger(ns, runId, { file: cfg.logFile }),
                 lastTrade: st.lastTrade ?? {},
             };
+
+            enforceHysteresis(ns, ctrl.stock, cfg);
 
             logEvent(ns, ctrl.stock, "info", "boot", {
                 version: "stockmgr@1",
@@ -144,6 +148,51 @@ export function makeStockManager(
             const recordSkip = (reason: string) => {
                 skipCounts[reason] = (skipCounts[reason] ?? 0) + 1;
             };
+
+            syncPositionStates(ctrl.stock as StockState, snapshot, tick);
+
+            const decisionGate: Record<
+                string,
+                {
+                    allowed: boolean;
+                    reason?: "decision_interval" | "cooldown_tick";
+                }
+            > = {};
+
+            for (const sym of symbols) {
+                const posState = ensurePositionState(
+                    ctrl.stock as StockState,
+                    sym
+                );
+                let reason: "decision_interval" | "cooldown_tick" | null = null;
+                if (
+                    typeof posState.cooldownUntilTick === "number" &&
+                    tick < posState.cooldownUntilTick
+                ) {
+                    reason = "cooldown_tick";
+                } else if (
+                    typeof posState.lastDecisionTick === "number" &&
+                    tick - posState.lastDecisionTick < cfg.decisionIntervalTicks
+                ) {
+                    reason = "decision_interval";
+                }
+
+                if (reason) {
+                    decisionGate[sym] = { allowed: false, reason };
+                    recordSkip(reason);
+                    logEvent(ns, ctrl.stock, "debug", "decision_skip", {
+                        sym,
+                        reason,
+                        tick,
+                        lastDecisionTick: posState.lastDecisionTick ?? null,
+                        cooldownUntilTick: posState.cooldownUntilTick ?? null,
+                        decisionIntervalTicks: cfg.decisionIntervalTicks,
+                    });
+                } else {
+                    decisionGate[sym] = { allowed: true };
+                    posState.lastDecisionTick = tick;
+                }
+            }
 
             const equity = estimateEquity(ns, snapshot);
             const cash = ns.getServerMoneyAvailable("home");
@@ -199,7 +248,7 @@ export function makeStockManager(
                     action: "liquidate",
                 });
                 // liquidate everything, pause
-                liquidateAll(ns, ctrl.stock, symbols);
+                liquidateAll(ns, ctrl.stock, symbols, cfg);
                 const cashAfter = ns.getServerMoneyAvailable("home");
                 ctrl.stock.equityPeak = cashAfter; // reset peak baseline after kill
                 ctrl.stock.pausedUntil = now + cfg.pauseAfterKillMs;
@@ -255,8 +304,16 @@ export function makeStockManager(
             for (const sym of symbols) {
                 if (actions >= cfg.maxActionsPerTick) break;
 
+                const gate = decisionGate[sym];
+                if (gate && !gate.allowed) continue;
+
                 const cd = ctrl.stock.cooldownUntil?.[sym] ?? 0;
                 if (now < cd) continue;
+
+                const posState = ensurePositionState(
+                    ctrl.stock as StockState,
+                    sym
+                );
 
                 const pos = ns.stock.getPosition(sym); // [longShares, longPx, shortShares, shortPx]
                 const longShares = pos[0],
@@ -273,6 +330,27 @@ export function makeStockManager(
 
                 // Sell long if we no longer want long
                 if (longShares > 0 && (!want || want.dir !== "LONG")) {
+                    if (
+                        posState.mode === "LONG" &&
+                        posState.enteredTick !== undefined &&
+                        tick - posState.enteredTick < cfg.minHoldTicks
+                    ) {
+                        recordSkip("min_hold");
+                        logEvent(
+                            ns,
+                            ctrl.stock,
+                            "debug",
+                            "min_hold_skip",
+                            {
+                                sym,
+                                tick,
+                                enteredTick: posState.enteredTick,
+                                minHoldTicks: cfg.minHoldTicks,
+                            }
+                        );
+                        continue;
+                    }
+
                     const holdCheck = holdBlocked(
                         lastTrade,
                         tick,
@@ -323,6 +401,7 @@ export function makeStockManager(
                         "SELL",
                         sym,
                         longShares,
+                        cfg,
                         orderStats
                     );
                     setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
@@ -381,6 +460,7 @@ export function makeStockManager(
                         "COVER",
                         sym,
                         shortShares,
+                        cfg,
                         orderStats
                     );
                     setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
@@ -400,6 +480,9 @@ export function makeStockManager(
             const totalCap = have4S ? cfg.maxTotalFrac : cfg.trendMaxTotalFrac;
             for (const [sym, want] of rankDesires(desires)) {
                 if (actions >= cfg.maxActionsPerTick) break;
+
+                const gate = decisionGate[sym];
+                if (gate && !gate.allowed) continue;
 
                 const cd = ctrl.stock.cooldownUntil?.[sym] ?? 0;
                 if (now < cd) continue;
@@ -608,6 +691,7 @@ export function makeStockManager(
                                 "BUY",
                                 sym,
                                 sharesFinal,
+                                cfg,
                                 orderStats
                             );
                             setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
@@ -718,6 +802,7 @@ export function makeStockManager(
                             "SHORT",
                             sym,
                             shortMore,
+                            cfg,
                             orderStats
                         );
                         setCooldown(ctrl.stock, sym, now, cfg.cooldownMs);
@@ -800,6 +885,8 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         // runtime
         rebalanceMs: c.rebalanceMs ?? 6000,
         cooldownMs: c.cooldownMs ?? 20000,
+        cooldownTicks: c.cooldownTicks ?? 0,
+        decisionIntervalTicks: c.decisionIntervalTicks ?? 1,
         minHoldTicks: c.minHoldTicks ?? 15,
         maxActionsPerTick: c.maxActionsPerTick ?? 6,
         logFile: c.logFile ?? "/logs/stock-manager.txt",
@@ -845,6 +932,45 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         minSignalFrac: c.minSignalFrac ?? 0.004,
         spreadEdgeBufferFrac: c.spreadEdgeBufferFrac ?? 0.001,
     };
+}
+
+function enforceHysteresis(
+    ns: NS,
+    stockState: StockState,
+    cfg: NormalizedConfig
+): void {
+    const epsilon = 1e-6;
+
+    if (cfg.enterLong <= cfg.exitLong) {
+        const enterBefore = cfg.enterLong;
+        const exitBefore = cfg.exitLong;
+        cfg.exitLong = Math.min(enterBefore, exitBefore);
+        cfg.enterLong = Math.min(
+            0.999999,
+            Math.max(enterBefore, exitBefore) + epsilon
+        );
+        logEvent(ns, stockState, "warn", "hysteresis_fix", {
+            mode: "forecast_long",
+            enterBefore,
+            exitBefore,
+            enterAfter: cfg.enterLong,
+            exitAfter: cfg.exitLong,
+        });
+    }
+
+    if (cfg.trendEnter <= cfg.trendExit) {
+        const enterBefore = cfg.trendEnter;
+        const exitBefore = cfg.trendExit;
+        cfg.trendExit = Math.min(enterBefore, exitBefore);
+        cfg.trendEnter = Math.max(enterBefore, exitBefore) + epsilon;
+        logEvent(ns, stockState, "warn", "hysteresis_fix", {
+            mode: "trend_long",
+            enterBefore,
+            exitBefore,
+            enterAfter: cfg.trendEnter,
+            exitAfter: cfg.trendExit,
+        });
+    }
 }
 
 function cashFloor(ns: NS, equity: number, cfg: NormalizedConfig): number {
@@ -917,6 +1043,7 @@ function execOrder(
     side: OrderSide,
     sym: string,
     sharesReq: number,
+    cfg: NormalizedConfig,
     stats?: TickStats
 ): void {
     const cashBefore = ns.getServerMoneyAvailable("home");
@@ -970,6 +1097,11 @@ function execOrder(
     if (!ctrlStock.lastTrade) ctrlStock.lastTrade = {};
     ctrlStock.lastTrade[sym] = { tick: ctrlStock.tick, side };
 
+    updatePositionStateFromHoldings(ctrlStock, sym, p1, ctrlStock.tick);
+    if (side === "BUY" || side === "SELL") {
+        setTickCooldown(ctrlStock, sym, ctrlStock.tick, cfg.cooldownTicks);
+    }
+
     logEvent(ns, ctrlStock, "info", "order", {
         sym,
         side,
@@ -990,11 +1122,34 @@ function execOrder(
     });
 }
 
-function liquidateAll(ns: NS, ctrlStock: StockState, symbols: string[]): void {
+function liquidateAll(
+    ns: NS,
+    ctrlStock: StockState,
+    symbols: string[],
+    cfg: NormalizedConfig
+): void {
     for (const sym of symbols) {
         const [l, , sh] = ns.stock.getPosition(sym);
-        if (l > 0) execOrder(ns, ctrlStock, symbols, "SELL", sym, l);
-        if (sh > 0) execOrder(ns, ctrlStock, symbols, "COVER", sym, sh);
+        if (l > 0)
+            execOrder(
+                ns,
+                ctrlStock,
+                symbols,
+                "SELL",
+                sym,
+                l,
+                cfg
+            );
+        if (sh > 0)
+            execOrder(
+                ns,
+                ctrlStock,
+                symbols,
+                "COVER",
+                sym,
+                sh,
+                cfg
+            );
     }
 }
 
@@ -1184,6 +1339,73 @@ function setCooldown(
     stockState.cooldownUntil[sym] = now + cooldownMs;
 }
 
+function setTickCooldown(
+    stockState: StockState,
+    sym: string,
+    tick: number,
+    cooldownTicks: number
+): void {
+    if (cooldownTicks <= 0) return;
+    const posState = ensurePositionState(stockState, sym);
+    posState.cooldownUntilTick = tick + cooldownTicks;
+}
+
+function ensurePositionState(
+    stockState: StockState,
+    sym: string
+): SymbolPositionState {
+    if (!stockState.positionsBySymbol) stockState.positionsBySymbol = {};
+    if (!stockState.positionsBySymbol[sym]) {
+        stockState.positionsBySymbol[sym] = { mode: "FLAT" };
+    }
+    return stockState.positionsBySymbol[sym];
+}
+
+function syncPositionStates(
+    stockState: StockState,
+    snapshot: SymbolSnapshot[],
+    tick: number
+): void {
+    for (const s of snapshot) {
+        const posState = ensurePositionState(stockState, s.sym);
+        const hasLong = s.longShares > 0;
+        const hasShort = s.shortShares > 0;
+
+        if (hasLong) {
+            if (posState.mode !== "LONG") posState.mode = "LONG";
+            if (posState.enteredTick === undefined) posState.enteredTick = tick;
+        } else if (hasShort) {
+            if (posState.mode !== "SHORT") posState.mode = "SHORT";
+            if (posState.enteredTick === undefined) posState.enteredTick = tick;
+        } else {
+            posState.mode = "FLAT";
+            posState.enteredTick = undefined;
+        }
+    }
+}
+
+function updatePositionStateFromHoldings(
+    stockState: StockState,
+    sym: string,
+    pos: { longShares: number; shortShares: number },
+    tick: number
+): void {
+    const posState = ensurePositionState(stockState, sym);
+    const hasLong = pos.longShares > 0;
+    const hasShort = pos.shortShares > 0;
+
+    if (hasLong) {
+        posState.mode = "LONG";
+        if (posState.enteredTick === undefined) posState.enteredTick = tick;
+    } else if (hasShort) {
+        posState.mode = "SHORT";
+        if (posState.enteredTick === undefined) posState.enteredTick = tick;
+    } else {
+        posState.mode = "FLAT";
+        posState.enteredTick = undefined;
+    }
+}
+
 async function persist(
     ns: NS,
     stockState: StockState,
@@ -1200,11 +1422,13 @@ async function persist(
     const toSave = {
         lastRebalance: stockState.lastRebalance ?? 0,
         cooldownUntil: stockState.cooldownUntil ?? {},
+        positionsBySymbol: stockState.positionsBySymbol ?? {},
         prices,
         entry: stockState.entry ?? {},
         equityPeak: stockState.equityPeak ?? 0,
         pausedUntil: stockState.pausedUntil ?? 0,
         lastTrade: stockState.lastTrade ?? {},
+        tick: stockState.tick ?? 0,
     };
 
     writeJSON(ns, STATE_FILE, toSave);
