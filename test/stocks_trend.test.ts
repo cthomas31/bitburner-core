@@ -8,8 +8,11 @@ import type {
 const baseCfg: NormalizedConfig = {
     rebalanceMs: 6000,
     cooldownMs: 20_000,
+    cooldownTicks: 0,
+    decisionIntervalTicks: 1,
     maxActionsPerTick: 6,
     minHoldTicks: 15,
+    logFile: "/dev/null",
     use4S: false,
     enterLong: 0.6,
     exitLong: 0.55,

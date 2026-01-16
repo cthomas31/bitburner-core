@@ -9,9 +9,11 @@ import type { NormalizedConfig } from "../src/domain/stocks/types.js";
 const cfg: NormalizedConfig = {
     rebalanceMs: 0,
     cooldownMs: 0,
+    cooldownTicks: 0,
+    decisionIntervalTicks: 1,
     maxActionsPerTick: 0,
     minHoldTicks: 10,
-    logFile: "",
+    logFile: "/dev/null",
     use4S: false,
     enterLong: 0,
     exitLong: 0,
