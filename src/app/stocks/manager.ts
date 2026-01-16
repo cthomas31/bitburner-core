@@ -504,6 +504,36 @@ export function makeStockManager(
                 if (isNew && openCount >= cfg.maxOpenSymbols) continue;
 
                 if (want.dir === "LONG") {
+                    const isHoldingLong = longShares > 0;
+                    if (isHoldingLong) {
+                        if (
+                            posState.targetLongShares === undefined ||
+                            posState.targetLongShares <= 0
+                        ) {
+                            posState.targetLongShares = longShares;
+                        }
+                        if (want.targetShares > longShares) {
+                            recordSkip("no_resize");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "debug",
+                                "resize_blocked",
+                                {
+                                    sym,
+                                    longShares,
+                                    lockedShares: posState.targetLongShares,
+                                    desiredShares: want.targetShares,
+                                }
+                            );
+                        }
+                        continue;
+                    }
+
+                    // Flat -> entering long
+                    posState.targetLongShares = undefined;
+                    posState.entryPrice = undefined;
+
                     const buyMore = Math.max(0, want.targetShares - longShares);
                     if (buyMore > 0) {
                         const holdCheck = holdBlocked(
@@ -683,6 +713,8 @@ export function makeStockManager(
                         }
 
                         if (sharesFinal > 0) {
+                            posState.targetLongShares = sharesFinal;
+                            posState.entryPrice = snap?.ask ?? undefined;
                             execOrder(
                                 ns,
                                 ctrl.stock,
@@ -1405,12 +1437,22 @@ function syncPositionStates(
         if (hasLong) {
             if (posState.mode !== "LONG") posState.mode = "LONG";
             if (posState.enteredTick === undefined) posState.enteredTick = tick;
+            if (
+                posState.targetLongShares === undefined ||
+                posState.targetLongShares <= 0
+            ) {
+                posState.targetLongShares = s.longShares;
+            }
         } else if (hasShort) {
             if (posState.mode !== "SHORT") posState.mode = "SHORT";
             if (posState.enteredTick === undefined) posState.enteredTick = tick;
+            posState.targetLongShares = undefined;
+            posState.entryPrice = undefined;
         } else {
             posState.mode = "FLAT";
             posState.enteredTick = undefined;
+            posState.targetLongShares = undefined;
+            posState.entryPrice = undefined;
         }
     }
 }
@@ -1428,12 +1470,22 @@ function updatePositionStateFromHoldings(
     if (hasLong) {
         posState.mode = "LONG";
         if (posState.enteredTick === undefined) posState.enteredTick = tick;
+        if (
+            posState.targetLongShares === undefined ||
+            posState.targetLongShares <= 0
+        ) {
+            posState.targetLongShares = pos.longShares;
+        }
     } else if (hasShort) {
         posState.mode = "SHORT";
         if (posState.enteredTick === undefined) posState.enteredTick = tick;
+        posState.targetLongShares = undefined;
+        posState.entryPrice = undefined;
     } else {
         posState.mode = "FLAT";
         posState.enteredTick = undefined;
+        posState.targetLongShares = undefined;
+        posState.entryPrice = undefined;
     }
 }
 
