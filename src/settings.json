@@ -14,8 +14,6 @@
     "controller.flags.enablePservManager": false,
     "controller.flags.enableDarkwebChecks": false,
     "controller.flags.enableCheckFactionServers": false,
-    "controller.augs.enable": true,
-    "controller.factions.enable": true,
     "controller.hacking.batchFromHacking": 800,
     "controller.targets.switchMinImprovement": 1.15,
 
@@ -32,6 +30,7 @@
     "controller.syscalls.augs.prereqsEveryMs": 3500,
     "controller.syscalls.augs.buyCooldownMs": 2500,
     "controller.augs.buy.repReachBuffer": 25000,
+    "controller.augs.enable": false,
     "controller.augs.buy.maxSpendFraction": 0.35,
     "controller.augs.buy.minCashReserve": 500000000,
     "controller.augs.cache.maxFacts": 75,
@@ -51,6 +50,7 @@
         "New Tokyo",
         "Ishima"
     ],
+    "controller.factions.enable": false,
     "controller.factions.workType": "hacking",
     "controller.factions.enableDonations": false,
     "controller.factions.chooser.repCacheMs": 300000,

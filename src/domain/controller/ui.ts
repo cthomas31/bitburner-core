@@ -32,20 +32,30 @@ export async function drawUI(
     const free = freeRam(ns, "home");
     ns.print(`Home RAM: free=${free.toFixed(1)}GB`);
 
-    ns.print(
-        `Faction: ${ctrl.chosenFaction ?? "(none)"} | Rep: ${Math.floor(
-            ctrl.factionRep ?? 0
-        )}`
-    );
-    ns.print(
-        `PendingAugs: ${ctrl.pendingAugsCount} | InstallCD: ${Math.max(
-            0,
-            Math.floor(
-                (CFG.installCooldownMs - (Date.now() - ctrl.lastInstallTs)) /
-                    1000
-            )
-        )}s`
-    );
+    if (CFG.enableFactions) {
+        ns.print(
+            `Faction: ${ctrl.chosenFaction ?? "(none)"} | Rep: ${Math.floor(
+                ctrl.factionRep ?? 0
+            )}`
+        );
+    }
+    else {
+        ns.print(`Factions: DISABLED`);
+    }
+    if (CFG.enableAugs) {
+        ns.print(
+            `PendingAugs: ${ctrl.pendingAugsCount} | InstallCD: ${Math.max(
+                0,
+                Math.floor(
+                    (CFG.installCooldownMs - (Date.now() - ctrl.lastInstallTs)) /
+                        1000
+                )
+            )}s`
+        );
+    }
+    else {
+        ns.print(`Augs: DISABLED`);
+    }
 
     ns.print(
         `Syscall: ${
