@@ -525,7 +525,7 @@ export async function main(ns: NS): Promise<void> {
                         ctrl,
                         key,
                         "scripts/singularity/purchase-aug.js",
-                        [faction, aug, dataPath.buy],
+                        [dataPath.buy, faction, aug],
                         1500
                     );
                     if (pid !== 0) {
