@@ -151,48 +151,7 @@ export function makeStockManager(
 
             syncPositionStates(ctrl.stock as StockState, snapshot, tick);
 
-            const decisionGate: Record<
-                string,
-                {
-                    allowed: boolean;
-                    reason?: "decision_interval" | "cooldown_tick";
-                }
-            > = {};
-
-            for (const sym of symbols) {
-                const posState = ensurePositionState(
-                    ctrl.stock as StockState,
-                    sym
-                );
-                let reason: "decision_interval" | "cooldown_tick" | null = null;
-                if (
-                    typeof posState.cooldownUntilTick === "number" &&
-                    tick < posState.cooldownUntilTick
-                ) {
-                    reason = "cooldown_tick";
-                } else if (
-                    typeof posState.lastDecisionTick === "number" &&
-                    tick - posState.lastDecisionTick < cfg.decisionIntervalTicks
-                ) {
-                    reason = "decision_interval";
-                }
-
-                if (reason) {
-                    decisionGate[sym] = { allowed: false, reason };
-                    recordSkip(reason);
-                    logEvent(ns, ctrl.stock, "debug", "decision_skip", {
-                        sym,
-                        reason,
-                        tick,
-                        lastDecisionTick: posState.lastDecisionTick ?? null,
-                        cooldownUntilTick: posState.cooldownUntilTick ?? null,
-                        decisionIntervalTicks: cfg.decisionIntervalTicks,
-                    });
-                } else {
-                    decisionGate[sym] = { allowed: true };
-                    posState.lastDecisionTick = tick;
-                }
-            }
+            const evaluatedThisTick = new Set<string>();
 
             const equity = estimateEquity(ns, snapshot);
             const cash = ns.getServerMoneyAvailable("home");
@@ -304,9 +263,6 @@ export function makeStockManager(
             for (const sym of symbols) {
                 if (actions >= cfg.maxActionsPerTick) break;
 
-                const gate = decisionGate[sym];
-                if (gate && !gate.allowed) continue;
-
                 const cd = ctrl.stock.cooldownUntil?.[sym] ?? 0;
                 if (now < cd) continue;
 
@@ -314,6 +270,25 @@ export function makeStockManager(
                     ctrl.stock as StockState,
                     sym
                 );
+                const gate = canEvaluateSymbol(
+                    sym,
+                    posState,
+                    tick,
+                    cfg,
+                    evaluatedThisTick
+                );
+                if (!gate.ok) {
+                    recordSkip(gate.reason ?? "decision_interval");
+                    logEvent(ns, ctrl.stock, "debug", "decision_skip", {
+                        sym,
+                        reason: gate.reason,
+                        tick,
+                        lastDecisionTick: posState.lastDecisionTick ?? null,
+                        cooldownUntilTick: posState.cooldownUntilTick ?? null,
+                        decisionIntervalTicks: cfg.decisionIntervalTicks,
+                    });
+                    continue;
+                }
 
                 const pos = ns.stock.getPosition(sym); // [longShares, longPx, shortShares, shortPx]
                 const longShares = pos[0],
@@ -330,8 +305,11 @@ export function makeStockManager(
 
                 // Sell long if we no longer want long
                 if (longShares > 0 && (!want || want.dir !== "LONG")) {
+                    if (posState.enteredTick === undefined) {
+                        posState.enteredTick = tick;
+                    }
                     if (
-                        posState.mode === "LONG" &&
+                        longShares > 0 &&
                         posState.enteredTick !== undefined &&
                         tick - posState.enteredTick < cfg.minHoldTicks
                     ) {
@@ -481,11 +459,32 @@ export function makeStockManager(
             for (const [sym, want] of rankDesires(desires)) {
                 if (actions >= cfg.maxActionsPerTick) break;
 
-                const gate = decisionGate[sym];
-                if (gate && !gate.allowed) continue;
-
                 const cd = ctrl.stock.cooldownUntil?.[sym] ?? 0;
                 if (now < cd) continue;
+
+                const posState = ensurePositionState(
+                    ctrl.stock as StockState,
+                    sym
+                );
+                const gate = canEvaluateSymbol(
+                    sym,
+                    posState,
+                    tick,
+                    cfg,
+                    evaluatedThisTick
+                );
+                if (!gate.ok) {
+                    recordSkip(gate.reason ?? "decision_interval");
+                    logEvent(ns, ctrl.stock, "debug", "decision_skip", {
+                        sym,
+                        reason: gate.reason,
+                        tick,
+                        lastDecisionTick: posState.lastDecisionTick ?? null,
+                        cooldownUntilTick: posState.cooldownUntilTick ?? null,
+                        decisionIntervalTicks: cfg.decisionIntervalTicks,
+                    });
+                    continue;
+                }
 
                 const pos = ns.stock.getPosition(sym);
                 const longShares = pos[0],
@@ -1098,7 +1097,7 @@ function execOrder(
     ctrlStock.lastTrade[sym] = { tick: ctrlStock.tick, side };
 
     updatePositionStateFromHoldings(ctrlStock, sym, p1, ctrlStock.tick);
-    if (side === "BUY" || side === "SELL") {
+    if (ret !== null) {
         setTickCooldown(ctrlStock, sym, ctrlStock.tick, cfg.cooldownTicks);
     }
 
@@ -1327,6 +1326,38 @@ function countOpenPositions(ns: NS, symbols: string[]): number {
         if (p[0] > 0 || p[2] > 0) n++;
     }
     return n;
+}
+
+function canEvaluateSymbol(
+    sym: string,
+    posState: SymbolPositionState,
+    tick: number,
+    cfg: NormalizedConfig,
+    evaluatedThisTick: Set<string>
+): { ok: boolean; reason?: "decision_interval" | "cooldown_tick" } {
+    // If we've already evaluated this symbol in the current logical tick,
+    // allow re-evaluation (e.g., exits then entries) without gating.
+    if (evaluatedThisTick.has(sym)) {
+        return { ok: true };
+    }
+
+    if (
+        typeof posState.cooldownUntilTick === "number" &&
+        tick < posState.cooldownUntilTick
+    ) {
+        return { ok: false, reason: "cooldown_tick" };
+    }
+
+    if (
+        typeof posState.lastDecisionTick === "number" &&
+        tick - posState.lastDecisionTick < cfg.decisionIntervalTicks
+    ) {
+        return { ok: false, reason: "decision_interval" };
+    }
+
+    posState.lastDecisionTick = tick;
+    evaluatedThisTick.add(sym);
+    return { ok: true };
 }
 
 function setCooldown(
