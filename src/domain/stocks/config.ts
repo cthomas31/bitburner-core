@@ -55,6 +55,12 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
             ns,
             "stocks.trend.spreadEdgeBufferFrac"
         ),
+
+        frictionMinEdgeFrac: getNumber(ns, "stocks.friction.minEdgeFrac"),
+        frictionIncludeCommission: getBool(
+            ns,
+            "stocks.friction.includeCommission"
+        ),
     };
 }
 

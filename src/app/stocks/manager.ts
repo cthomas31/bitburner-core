@@ -646,6 +646,7 @@ export function makeStockManager(
                         : 1;
                 const holdInfo = ctrl.stock.lastTrade?.[sym];
 
+                // Friction / edge gate (entries only)
                 // Enforce max open symbols for new positions
                 const isNew =
                     (want.dir === "LONG" && longShares === 0) ||
@@ -863,6 +864,39 @@ export function makeStockManager(
                         }
 
                         if (sharesFinal > 0) {
+                            const frictionFrac = estimateFrictionFracForEntry(
+                                ns,
+                                snap,
+                                sharesFinal,
+                                "BUY",
+                                cfg
+                            );
+                            const expectedEdgeFrac = have4S
+                                ? Math.abs((snap?.forecast ?? 0) - 0.5)
+                                : Math.abs(want.signalFrac ?? 0);
+                            if (
+                                expectedEdgeFrac <
+                                frictionFrac + cfg.frictionMinEdgeFrac
+                            ) {
+                                recordSkip("friction_edge");
+                                logEvent(
+                                    ns,
+                                    ctrl.stock,
+                                    "debug",
+                                    "friction_edge_skip",
+                                    verbosity,
+                                    {
+                                        sym,
+                                        edgeFrac: expectedEdgeFrac,
+                                        frictionFrac,
+                                        minEdgeFrac: cfg.frictionMinEdgeFrac,
+                                        notional: priceUsed * sharesFinal,
+                                        shares: sharesFinal,
+                                    }
+                                );
+                                continue;
+                            }
+
                             const added = addCandidate({
                                 sym,
                                 side: "BUY",
@@ -1115,6 +1149,39 @@ export function makeStockManager(
 
                         if (sharesFinal <= 0) continue;
 
+                        const frictionFrac = estimateFrictionFracForEntry(
+                            ns,
+                            snap,
+                            sharesFinal,
+                            "SHORT",
+                            cfg
+                        );
+                        const expectedEdgeFrac = have4S
+                            ? Math.abs((snap?.forecast ?? 0) - 0.5)
+                            : Math.abs(want.signalFrac ?? 0);
+                        if (
+                            expectedEdgeFrac <
+                            frictionFrac + cfg.frictionMinEdgeFrac
+                        ) {
+                            recordSkip("friction_edge");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "debug",
+                                "friction_edge_skip",
+                                verbosity,
+                                {
+                                    sym,
+                                    edgeFrac: expectedEdgeFrac,
+                                    frictionFrac,
+                                    minEdgeFrac: cfg.frictionMinEdgeFrac,
+                                    notional: priceUsed * sharesFinal,
+                                    shares: sharesFinal,
+                                }
+                            );
+                            continue;
+                        }
+
                         const added = addCandidate({
                             sym,
                             side: "SHORT",
@@ -1221,17 +1288,16 @@ export function makeStockManager(
                 cashEnd
             )} desires=${desires.size}${debugStr}`;
 
-            const openLongs = snapshot.filter((s) => s.longShares > 0).length;
-            const openShorts = snapshot.filter((s) => s.shortShares > 0).length;
+            const openCounts = openPositionCounts(ns, symbols);
 
             logEvent(ns, ctrl.stock, "info", "rebalance_summary", verbosity, {
                 tick,
                 mode: ctrl.stock.lastMode,
                 actions,
                 plannedSymbols: plannedSymbols.size,
-                openSymbols: countOpenPositions(ns, symbols),
-                openLongs,
-                openShorts,
+                openSymbols: openCounts.openSymbols,
+                openLongs: openCounts.openLongs,
+                openShorts: openCounts.openShorts,
                 cashStart: cash,
                 cashEnd,
                 equityStart: equity,
@@ -1343,6 +1409,9 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         minPrice: c.minPrice ?? 5_000, // skip cheap noisy tickers
         minSignalFrac: c.minSignalFrac ?? 0.004,
         spreadEdgeBufferFrac: c.spreadEdgeBufferFrac ?? 0.001,
+
+        frictionMinEdgeFrac: c.frictionMinEdgeFrac ?? 0,
+        frictionIncludeCommission: c.frictionIncludeCommission ?? true,
 
         legacyMinHoldTicks:
             c.minHoldTicks !== undefined &&
@@ -1562,6 +1631,24 @@ function grossExposureValue(ns: NS, symbols: string[]): number {
         gross += ns.stock.getBidPrice(sym) * sh;
     }
     return gross;
+}
+
+function estimateFrictionFracForEntry(
+    ns: NS,
+    snap: SymbolSnapshot | undefined,
+    shares: number,
+    side: OrderSide,
+    cfg: NormalizedConfig
+): number {
+    if (!snap || shares <= 0) return Number.POSITIVE_INFINITY;
+    const price =
+        side === "SHORT" ? snap.bid ?? 0 : snap.ask ?? 0;
+    const notional = price * shares;
+    const spreadCost = Math.abs((snap.ask ?? 0) - (snap.bid ?? 0)) * shares;
+    const commission = ns.stock.getConstants().StockMarketCommission;
+    const frictionValue =
+        spreadCost + (cfg.frictionIncludeCommission ? commission : 0);
+    return frictionValue / Math.max(notional, 1);
 }
 
 type TickStats = {
@@ -1904,6 +1991,20 @@ function countOpenPositions(ns: NS, symbols: string[]): number {
         if (p[0] > 0 || p[2] > 0) n++;
     }
     return n;
+}
+
+function openPositionCounts(
+    ns: NS,
+    symbols: string[]
+): { openLongs: number; openShorts: number; openSymbols: number } {
+    let openLongs = 0;
+    let openShorts = 0;
+    for (const sym of symbols) {
+        const p = ns.stock.getPosition(sym);
+        if (p[0] > 0) openLongs++;
+        if (p[2] > 0) openShorts++;
+    }
+    return { openLongs, openShorts, openSymbols: openLongs + openShorts };
 }
 
 function canEvaluateSymbol(

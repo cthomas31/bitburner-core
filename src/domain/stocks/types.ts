@@ -59,6 +59,10 @@ export interface StockManagerConfig {
     minPrice?: number;
     minSignalFrac?: number;
     spreadEdgeBufferFrac?: number;
+
+    // friction / edge gating
+    frictionMinEdgeFrac?: number;
+    frictionIncludeCommission?: boolean;
 }
 
 export interface NormalizedConfig {
@@ -101,6 +105,9 @@ export interface NormalizedConfig {
     minPrice: number;
     minSignalFrac: number;
     spreadEdgeBufferFrac: number;
+
+    frictionMinEdgeFrac: number;
+    frictionIncludeCommission: boolean;
 
     // Legacy flags (for logging only)
     legacyMinHoldTicks?: number;

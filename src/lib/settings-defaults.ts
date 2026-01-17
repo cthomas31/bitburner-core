@@ -128,6 +128,10 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "stocks.trend.minSignalFrac": 0.004,
     "stocks.trend.spreadEdgeBufferFrac": 0.001,
 
+    // friction gate
+    "stocks.friction.minEdgeFrac": 0,
+    "stocks.friction.includeCommission": true,
+
     // Batcher
     "batcher.tickMs": 125,
     "batcher.batchSpacingMs": 400,

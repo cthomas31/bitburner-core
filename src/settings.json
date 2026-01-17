@@ -115,6 +115,9 @@
     "stocks.trend.maxSpreadFrac": 0.02,
     "stocks.trend.minPrice": 1,
 
+    "stocks.friction.minEdgeFrac": 0,
+    "stocks.friction.includeCommission": true,
+
     "batcher.tickMs": 125,
     "batcher.batchSpacingMs": 400,
     "batcher.maxBatchesPerTarget": 40,
