@@ -875,8 +875,9 @@ export function makeStockManager(
                                 ? Math.abs((snap?.forecast ?? 0) - 0.5)
                                 : Math.abs(want.signalFrac ?? 0);
                             if (
+                                cfg.frictionMinEdgeFrac > 0 &&
                                 expectedEdgeFrac <
-                                frictionFrac + cfg.frictionMinEdgeFrac
+                                    frictionFrac + cfg.frictionMinEdgeFrac
                             ) {
                                 recordSkip("friction_edge");
                                 logEvent(
@@ -1160,8 +1161,9 @@ export function makeStockManager(
                             ? Math.abs((snap?.forecast ?? 0) - 0.5)
                             : Math.abs(want.signalFrac ?? 0);
                         if (
+                            cfg.frictionMinEdgeFrac > 0 &&
                             expectedEdgeFrac <
-                            frictionFrac + cfg.frictionMinEdgeFrac
+                                frictionFrac + cfg.frictionMinEdgeFrac
                         ) {
                             recordSkip("friction_edge");
                             logEvent(
@@ -1999,12 +2001,16 @@ function openPositionCounts(
 ): { openLongs: number; openShorts: number; openSymbols: number } {
     let openLongs = 0;
     let openShorts = 0;
+    let openSymbols = 0;
     for (const sym of symbols) {
         const p = ns.stock.getPosition(sym);
-        if (p[0] > 0) openLongs++;
-        if (p[2] > 0) openShorts++;
+        const hasLong = p[0] > 0;
+        const hasShort = p[2] > 0;
+        if (hasLong) openLongs++;
+        if (hasShort) openShorts++;
+        if (hasLong || hasShort) openSymbols++;
     }
-    return { openLongs, openShorts, openSymbols: openLongs + openShorts };
+    return { openLongs, openShorts, openSymbols };
 }
 
 function canEvaluateSymbol(
