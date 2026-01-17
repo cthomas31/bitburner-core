@@ -14,6 +14,7 @@ const cfg: NormalizedConfig = {
     maxActionsPerTick: 0,
     minHoldTicks: 10,
     logFile: "/dev/null",
+    logVerbosity: "quiet",
     use4S: false,
     enterLong: 0,
     exitLong: 0,

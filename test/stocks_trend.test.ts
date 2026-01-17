@@ -13,6 +13,7 @@ const baseCfg: NormalizedConfig = {
     maxActionsPerTick: 6,
     minHoldTicks: 15,
     logFile: "/dev/null",
+    logVerbosity: "quiet",
     use4S: false,
     enterLong: 0.6,
     exitLong: 0.55,
