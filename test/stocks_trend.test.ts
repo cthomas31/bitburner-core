@@ -45,6 +45,8 @@ const baseCfg: NormalizedConfig = {
     minPrice: 1,
     minSignalFrac: 0.004,
     spreadEdgeBufferFrac: 0.001,
+    frictionMinEdgeFrac: 0,
+    frictionIncludeCommission: false,
 };
 
 const equity = 100_000;

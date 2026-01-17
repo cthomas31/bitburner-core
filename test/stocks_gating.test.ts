@@ -46,6 +46,8 @@ const cfg: NormalizedConfig = {
     minPrice: 0,
     minSignalFrac: 0.004,
     spreadEdgeBufferFrac: 0.001,
+    frictionMinEdgeFrac: 0,
+    frictionIncludeCommission: false,
 };
 
 describe("order gating", () => {
