@@ -35,6 +35,8 @@ const cfg: NormalizedConfig = {
     minCashFrac: 0,
     maxDrawdownFrac: 0,
     pauseAfterKillMs: 0,
+    externalSpendResetFrac: 1,
+    resetEquityPeakOnBoot: false,
     trendLongOnly: false,
     trendMaxSymbolFrac: 0,
     trendMaxTotalFrac: 0,

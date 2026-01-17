@@ -117,6 +117,8 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "stocks.cash.minCashFrac": 0.1,
     "stocks.risk.maxDrawdownFrac": 0.15,
     "stocks.risk.pauseAfterKillMs": 5 * 60 * 1000,
+    "stocks.externalSpendResetFrac": 0.5,
+    "stocks.resetEquityPeakOnBoot": false,
     "stocks.trend.longOnly": true,
     "stocks.trend.maxSymbolFrac": 0.02,
     "stocks.trend.maxTotalFrac": 0.2,

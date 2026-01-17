@@ -106,6 +106,8 @@
     "stocks.cash.minCashFrac": 0.1,
     "stocks.risk.maxDrawdownFrac": 0.15,
     "stocks.risk.pauseAfterKillMs": 300000,
+    "stocks.externalSpendResetFrac": 0.5,
+    "stocks.resetEquityPeakOnBoot": false,
     "stocks.trend.longOnly": false,
     "stocks.trend.maxSymbolFrac": 0.1,
     "stocks.trend.maxTotalFrac": 0.5,

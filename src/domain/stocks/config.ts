@@ -39,6 +39,11 @@ export function getStockManagerConfig(ns: NS): StockManagerConfig {
 
         maxDrawdownFrac: getNumber(ns, "stocks.risk.maxDrawdownFrac"),
         pauseAfterKillMs: getNumber(ns, "stocks.risk.pauseAfterKillMs"),
+        externalSpendResetFrac: getNumber(
+            ns,
+            "stocks.externalSpendResetFrac"
+        ),
+        resetEquityPeakOnBoot: getBool(ns, "stocks.resetEquityPeakOnBoot"),
 
         trendLongOnly: getBool(ns, "stocks.trend.longOnly"),
         trendMaxSymbolFrac: getNumber(ns, "stocks.trend.maxSymbolFrac"),

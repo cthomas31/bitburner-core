@@ -127,7 +127,18 @@ export function makeStockManager(
                 }),
                 logVerbosity: verbosity,
                 lastTrade: st.lastTrade ?? {},
+                executedOrdersPrevTick: st.executedOrdersPrevTick ?? 0,
             };
+
+            if (cfg.resetEquityPeakOnBoot) {
+                const symbols = ns.stock.getSymbols();
+                const equityNow = estimateEquityQuick(ns, symbols);
+                ctrl.stock.equityPeak = equityNow;
+                logEvent(ns, ctrl.stock, "info", "equity_peak_reset_boot", verbosity, {
+                    tick: ctrl.stock.tick,
+                    equity: equityNow,
+                });
+            }
 
             enforceHysteresis(ns, ctrl.stock, cfg);
 
@@ -167,6 +178,7 @@ export function makeStockManager(
                 realizedPnL: 0,
                 orders: 0,
             };
+            let executedOrdersThisTick = 0;
             const recordSkip = (reason: string) => {
                 skipCounts[reason] = (skipCounts[reason] ?? 0) + 1;
             };
@@ -195,6 +207,7 @@ export function makeStockManager(
                     ctrl.stock.pausedUntil
                 ).toLocaleTimeString()}`;
                 ctrl.stock.lastRebalance = now;
+                ctrl.stock.executedOrdersPrevTick = executedOrdersThisTick;
                 await persist(ns, ctrl.stock, cfg);
                 logEvent(ns, ctrl.stock, "info", "paused", verbosity, {
                     tick,
@@ -203,6 +216,36 @@ export function makeStockManager(
                     equity,
                 });
                 return;
+            }
+
+            const equityPeakBefore = ctrl.stock.equityPeak ?? 0;
+            const executedPrevTick = ctrl.stock.executedOrdersPrevTick ?? 0;
+            const equityDropFrac =
+                equityPeakBefore > 0
+                    ? (equityPeakBefore - equity) /
+                      Math.max(equityPeakBefore, 1)
+                    : 0;
+
+            if (
+                executedPrevTick === 0 &&
+                equityPeakBefore > 0 &&
+                equityDropFrac >= cfg.externalSpendResetFrac
+            ) {
+                ctrl.stock.equityPeak = equity;
+                logEvent(
+                    ns,
+                    ctrl.stock,
+                    "info",
+                    "external_spend_reset",
+                    verbosity,
+                    {
+                        tick,
+                        equityPeakBefore,
+                        equityNow: equity,
+                        dropFrac: equityDropFrac,
+                        threshold: cfg.externalSpendResetFrac,
+                    }
+                );
             }
 
             // update peak + check drawdown
@@ -229,7 +272,13 @@ export function makeStockManager(
                     action: "liquidate",
                 });
                 // liquidate everything, pause
-                liquidateAll(ns, ctrl.stock, symbols, cfg);
+                const liquidatedOrders = liquidateAll(
+                    ns,
+                    ctrl.stock,
+                    symbols,
+                    cfg
+                );
+                executedOrdersThisTick = liquidatedOrders;
                 const cashAfter = ns.getServerMoneyAvailable("home");
                 ctrl.stock.equityPeak = cashAfter; // reset peak baseline after kill
                 ctrl.stock.pausedUntil = now + cfg.pauseAfterKillMs;
@@ -237,6 +286,7 @@ export function makeStockManager(
                     dd * 100
                 ).toFixed(1)}% -> liquidated + paused`;
                 ctrl.stock.lastRebalance = now;
+                ctrl.stock.executedOrdersPrevTick = executedOrdersThisTick;
                 await persist(ns, ctrl.stock, cfg);
 
                 logEvent(ns, ctrl.stock, "warn", "risk_kill", verbosity, {
@@ -261,6 +311,7 @@ export function makeStockManager(
                     cash
                 )} < ${fmt(minCash)})`;
                 ctrl.stock.lastRebalance = now;
+                ctrl.stock.executedOrdersPrevTick = executedOrdersThisTick;
                 await persist(ns, ctrl.stock, cfg);
                 ctrl.stock.logger.flush();
                 return;
@@ -1150,6 +1201,8 @@ export function makeStockManager(
                 orders: orderStats.orders,
             });
 
+            executedOrdersThisTick = orderStats.orders;
+            ctrl.stock.executedOrdersPrevTick = executedOrdersThisTick;
             await persist(ns, ctrl.stock, cfg);
             ctrl.stock.logger.flush();
         },
@@ -1215,6 +1268,8 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         // risk controls
         maxDrawdownFrac: c.maxDrawdownFrac ?? 0.15, // 15% drawdown kill-switch
         pauseAfterKillMs: c.pauseAfterKillMs ?? 5 * 60 * 1000,
+        externalSpendResetFrac: c.externalSpendResetFrac ?? 0.5,
+        resetEquityPeakOnBoot: c.resetEquityPeakOnBoot ?? false,
 
         // trend mode clamps (no 4S)
         trendLongOnly: c.trendLongOnly ?? true,
@@ -1335,6 +1390,8 @@ function shouldLogEvent(
         "paused",
         "boot",
         "order_error",
+        "external_spend_reset",
+        "equity_peak_reset_boot",
     ]);
 
     if (verbosity === "quiet") return quietAllowed.has(event);
@@ -1486,10 +1543,11 @@ function liquidateAll(
     ctrlStock: StockState,
     symbols: string[],
     cfg: NormalizedConfig
-): void {
+): number {
+    let orders = 0;
     for (const sym of symbols) {
         const [l, , sh] = ns.stock.getPosition(sym);
-        if (l > 0)
+        if (l > 0) {
             execOrder(
                 ns,
                 ctrlStock,
@@ -1499,7 +1557,9 @@ function liquidateAll(
                 l,
                 cfg
             );
-        if (sh > 0)
+            orders++;
+        }
+        if (sh > 0) {
             execOrder(
                 ns,
                 ctrlStock,
@@ -1509,7 +1569,10 @@ function liquidateAll(
                 sh,
                 cfg
             );
+            orders++;
+        }
     }
+    return orders;
 }
 
 // ============== API Detection ==============
@@ -1859,6 +1922,7 @@ async function persist(
         pausedUntil: stockState.pausedUntil ?? 0,
         lastTrade: stockState.lastTrade ?? {},
         tick: stockState.tick ?? 0,
+        executedOrdersPrevTick: stockState.executedOrdersPrevTick ?? 0,
     };
 
     writeJSON(ns, STATE_FILE, toSave);

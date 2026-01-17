@@ -44,6 +44,8 @@ export interface StockManagerConfig {
     // risk management
     maxDrawdownFrac?: number;
     pauseAfterKillMs?: number;
+    externalSpendResetFrac?: number;
+    resetEquityPeakOnBoot?: boolean;
 
     // trend mode sizing
     trendLongOnly?: boolean;
@@ -86,6 +88,8 @@ export interface NormalizedConfig {
     minCashFrac: number;
     maxDrawdownFrac: number;
     pauseAfterKillMs: number;
+    externalSpendResetFrac: number;
+    resetEquityPeakOnBoot: boolean;
     trendLongOnly: boolean;
     trendMaxSymbolFrac: number;
     trendMaxTotalFrac: number;
@@ -117,6 +121,7 @@ export interface StockState {
     logger: StockLogger;
     lastTrade?: Record<string, TradeNote>;
     logVerbosity?: "quiet" | "normal" | "debug";
+    executedOrdersPrevTick?: number;
 }
 
 export type PositionMode = "FLAT" | "LONG" | "SHORT";
