@@ -73,6 +73,7 @@ describe("min notional handling", () => {
             cooldownMs: 0,
             minHoldTicks: 0,
             logFile: "/logs/min-notional-1.jsonl",
+            logVerbosity: "debug",
             maxSymbolFrac: 0.5,
             maxTotalFrac: 1,
         });
@@ -107,6 +108,7 @@ describe("min notional handling", () => {
             cooldownMs: 0,
             minHoldTicks: 0,
             logFile,
+            logVerbosity: "debug",
             maxSymbolFrac: 0.5,
             maxTotalFrac: 1,
         });

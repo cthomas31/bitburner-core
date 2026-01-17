@@ -12,6 +12,8 @@ const baseCfg: NormalizedConfig = {
     decisionIntervalTicks: 1,
     maxActionsPerTick: 6,
     minHoldTicks: 15,
+    minHoldAfterEntryTicks: 30,
+    minTradeIntervalTicks: 15,
     logFile: "/dev/null",
     logVerbosity: "quiet",
     use4S: false,

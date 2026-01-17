@@ -9,7 +9,9 @@ export interface StockManagerConfig {
     cooldownTicks?: number;
     decisionIntervalTicks?: number;
     maxActionsPerTick?: number;
-    minHoldTicks?: number;
+    minHoldTicks?: number; // deprecated – maps to both minHoldAfterEntryTicks and minTradeIntervalTicks
+    minHoldAfterEntryTicks?: number;
+    minTradeIntervalTicks?: number;
     logFile?: string;
     logVerbosity?: "quiet" | "normal" | "debug";
 
@@ -65,7 +67,9 @@ export interface NormalizedConfig {
     cooldownTicks: number;
     decisionIntervalTicks: number;
     maxActionsPerTick: number;
-    minHoldTicks: number;
+    minHoldTicks: number; // deprecated alias for minTradeIntervalTicks
+    minHoldAfterEntryTicks: number;
+    minTradeIntervalTicks: number;
     logFile: string;
     logVerbosity: "quiet" | "normal" | "debug";
     use4S: boolean;
@@ -97,6 +101,10 @@ export interface NormalizedConfig {
     minPrice: number;
     minSignalFrac: number;
     spreadEdgeBufferFrac: number;
+
+    // Legacy flags (for logging only)
+    legacyMinHoldTicks?: number;
+    legacyCooldownMs?: number;
 }
 
 export interface PriceEntry {

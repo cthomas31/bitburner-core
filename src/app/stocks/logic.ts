@@ -243,10 +243,18 @@ export function holdBlocked(
     minHoldTicks: number,
     side: OrderSide
 ): { blocked: boolean; ticksSince: number } {
+    // Deprecated alias – use tradeIntervalBlocked. Kept for backward compatibility with tests/users.
+    return tradeIntervalBlocked(last, tick, minHoldTicks);
+}
+
+export function tradeIntervalBlocked(
+    last: TradeNote | undefined,
+    tick: number,
+    minTradeIntervalTicks: number
+): { blocked: boolean; ticksSince: number } {
     if (!last) return { blocked: false, ticksSince: Infinity };
     const ticksSince = tick - last.tick;
-    if (ticksSince >= minHoldTicks) return { blocked: false, ticksSince };
-    if (last.side === side) return { blocked: false, ticksSince };
+    if (ticksSince >= minTradeIntervalTicks) return { blocked: false, ticksSince };
     return { blocked: true, ticksSince };
 }
 

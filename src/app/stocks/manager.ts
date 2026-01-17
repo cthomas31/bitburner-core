@@ -30,11 +30,11 @@ import {
     capDesires,
     computeTrendDesires,
     drawdownFrac,
-    holdBlocked,
     isWithinTolerance,
     orderThresholdReasons,
     spreadSignalReason,
     shouldKillOnDrawdown,
+    tradeIntervalBlocked,
 } from "/app/stocks/logic.js";
 import { StockLogger } from "/domain/stocks/logger.js";
 
@@ -129,6 +129,27 @@ export function makeStockManager(
                 lastTrade: st.lastTrade ?? {},
                 executedOrdersPrevTick: st.executedOrdersPrevTick ?? 0,
             };
+
+            if (cfg.legacyMinHoldTicks !== undefined) {
+                logEvent(ns, ctrl.stock, "warn", "config_deprecated", verbosity, {
+                    key: "stocks.minHoldTicks",
+                    mappedTo: [
+                        "stocks.minHoldAfterEntryTicks",
+                        "stocks.minTradeIntervalTicks",
+                    ],
+                    value: cfg.legacyMinHoldTicks,
+                });
+            }
+
+            if (cfg.legacyCooldownMs !== undefined) {
+                logEvent(ns, ctrl.stock, "warn", "config_deprecated", verbosity, {
+                    key: "stocks.cooldownMs",
+                    mappedTo: "stocks.cooldownTicks",
+                    cooldownMs: cfg.legacyCooldownMs,
+                    rebalanceMs: cfg.rebalanceMs,
+                    derivedCooldownTicks: cfg.cooldownTicks,
+                });
+            }
 
             if (cfg.resetEquityPeakOnBoot) {
                 const symbols = ns.stock.getSymbols();
@@ -350,9 +371,6 @@ export function makeStockManager(
 
             // 1) Exits / reversals
             for (const sym of symbols) {
-                const cd = ctrl.stock.cooldownUntil?.[sym] ?? 0;
-                if (now < cd) continue;
-
                 const posState = ensurePositionState(
                     ctrl.stock as StockState,
                     sym
@@ -395,38 +413,49 @@ export function makeStockManager(
 
                 // Sell long if we no longer want long
                 if (longShares > 0 && (!want || want.dir !== "LONG")) {
-                    if (tick - enteredTick < cfg.minHoldTicks) {
-                        recordSkip("min_hold");
+                    if (
+                        tick - enteredTick <
+                        Math.max(0, cfg.minHoldAfterEntryTicks)
+                    ) {
+                        recordSkip("min_hold_after_entry");
                         logEvent(
                             ns,
                             ctrl.stock,
                             "debug",
-                            "min_hold_skip",
+                            "min_hold_after_entry_skip",
                             verbosity,
                             {
                                 sym,
                                 tick,
                                 enteredTick,
-                                minHoldTicks: cfg.minHoldTicks,
+                                minHoldAfterEntryTicks:
+                                    cfg.minHoldAfterEntryTicks,
                             }
                         );
                         continue;
                     }
 
-                    const holdCheck = holdBlocked(
+                    const tradeGate = tradeIntervalBlocked(
                         lastTrade,
                         tick,
-                        cfg.minHoldTicks,
-                        "SELL"
+                        cfg.minTradeIntervalTicks
                     );
-                    if (holdCheck.blocked) {
-                        recordSkip("cooldown");
-                        logEvent(ns, ctrl.stock, "debug", "cooldown_skip", verbosity, {
-                            sym,
-                            intendedSide: "SELL",
-                            ticksSinceLastTrade: holdCheck.ticksSince,
-                            minHoldTicks: cfg.minHoldTicks,
-                        });
+                    if (tradeGate.blocked) {
+                        recordSkip("min_trade_interval");
+                        logEvent(
+                            ns,
+                            ctrl.stock,
+                            "debug",
+                            "trade_interval_skip",
+                            verbosity,
+                            {
+                                sym,
+                                intendedSide: "SELL",
+                                ticksSinceLastTrade: tradeGate.ticksSince,
+                                minTradeIntervalTicks:
+                                    cfg.minTradeIntervalTicks,
+                            }
+                        );
                         continue;
                     }
 
@@ -471,7 +500,6 @@ export function makeStockManager(
                                 cfg,
                                 orderStats
                             );
-                            setCooldown(ctrl.stock as StockState, sym, now, cfg.cooldownMs);
                         },
                     });
                     continue;
@@ -479,38 +507,49 @@ export function makeStockManager(
 
                 // Cover short if we no longer want short
                 if (shortShares > 0 && (!want || want.dir !== "SHORT")) {
-                    if (tick - enteredTick < cfg.minHoldTicks) {
-                        recordSkip("min_hold");
+                    if (
+                        tick - enteredTick <
+                        Math.max(0, cfg.minHoldAfterEntryTicks)
+                    ) {
+                        recordSkip("min_hold_after_entry");
                         logEvent(
                             ns,
                             ctrl.stock,
                             "debug",
-                            "min_hold_skip",
+                            "min_hold_after_entry_skip",
                             verbosity,
                             {
                                 sym,
                                 tick,
                                 enteredTick,
-                                minHoldTicks: cfg.minHoldTicks,
+                                minHoldAfterEntryTicks:
+                                    cfg.minHoldAfterEntryTicks,
                             }
                         );
                         continue;
                     }
 
-                    const holdCheck = holdBlocked(
+                    const tradeGate = tradeIntervalBlocked(
                         lastTrade,
                         tick,
-                        cfg.minHoldTicks,
-                        "COVER"
+                        cfg.minTradeIntervalTicks
                     );
-                    if (holdCheck.blocked) {
-                        recordSkip("cooldown");
-                        logEvent(ns, ctrl.stock, "debug", "cooldown_skip", verbosity, {
-                            sym,
-                            intendedSide: "COVER",
-                            ticksSinceLastTrade: holdCheck.ticksSince,
-                            minHoldTicks: cfg.minHoldTicks,
-                        });
+                    if (tradeGate.blocked) {
+                        recordSkip("min_trade_interval");
+                        logEvent(
+                            ns,
+                            ctrl.stock,
+                            "debug",
+                            "trade_interval_skip",
+                            verbosity,
+                            {
+                                sym,
+                                intendedSide: "COVER",
+                                ticksSinceLastTrade: tradeGate.ticksSince,
+                                minTradeIntervalTicks:
+                                    cfg.minTradeIntervalTicks,
+                            }
+                        );
                         continue;
                     }
 
@@ -554,7 +593,6 @@ export function makeStockManager(
                                 cfg,
                                 orderStats
                             );
-                            setCooldown(ctrl.stock as StockState, sym, now, cfg.cooldownMs);
                         },
                     });
                     continue;
@@ -571,9 +609,6 @@ export function makeStockManager(
                 : cfg.trendMaxSymbolFrac;
             const totalCap = have4S ? cfg.maxTotalFrac : cfg.trendMaxTotalFrac;
             for (const [sym, want] of rankDesires(desires)) {
-                const cd = ctrl.stock.cooldownUntil?.[sym] ?? 0;
-                if (now < cd) continue;
-
                 const posState = ensurePositionState(
                     ctrl.stock as StockState,
                     sym
@@ -648,25 +683,25 @@ export function makeStockManager(
                     // Flat -> entering long
                     const buyMore = Math.max(0, want.targetShares - longShares);
                     if (buyMore > 0) {
-                        const holdCheck = holdBlocked(
+                        const tradeGate = tradeIntervalBlocked(
                             holdInfo,
                             tick,
-                            cfg.minHoldTicks,
-                            "BUY"
+                            cfg.minTradeIntervalTicks
                         );
-                        if (holdCheck.blocked) {
-                            recordSkip("cooldown");
+                        if (tradeGate.blocked) {
+                            recordSkip("min_trade_interval");
                             logEvent(
                                 ns,
                                 ctrl.stock,
                                 "debug",
-                                "cooldown_skip",
+                                "trade_interval_skip",
                                 verbosity,
                                 {
                                     sym,
                                     intendedSide: "BUY",
-                                    ticksSinceLastTrade: holdCheck.ticksSince,
-                                    minHoldTicks: cfg.minHoldTicks,
+                                    ticksSinceLastTrade: tradeGate.ticksSince,
+                                    minTradeIntervalTicks:
+                                        cfg.minTradeIntervalTicks,
                                 }
                             );
                             continue;
@@ -849,7 +884,6 @@ export function makeStockManager(
                                         cfg,
                                         orderStats
                                     );
-                                    setCooldown(ctrl.stock as StockState, sym, now, cfg.cooldownMs);
                                 },
                             });
                             if (added) {
@@ -900,20 +934,27 @@ export function makeStockManager(
                         want.targetShares - shortShares
                     );
                     if (shortMore > 0) {
-                        const holdCheck = holdBlocked(
+                        const tradeGate = tradeIntervalBlocked(
                             holdInfo,
                             tick,
-                            cfg.minHoldTicks,
-                            "SHORT"
+                            cfg.minTradeIntervalTicks
                         );
-                        if (holdCheck.blocked) {
-                            recordSkip("cooldown");
-                            logEvent(ns, ctrl.stock, "debug", "cooldown_skip", verbosity, {
-                                sym,
-                                intendedSide: "SHORT",
-                                ticksSinceLastTrade: holdCheck.ticksSince,
-                                minHoldTicks: cfg.minHoldTicks,
-                            });
+                        if (tradeGate.blocked) {
+                            recordSkip("min_trade_interval");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "debug",
+                                "trade_interval_skip",
+                                verbosity,
+                                {
+                                    sym,
+                                    intendedSide: "SHORT",
+                                    ticksSinceLastTrade: tradeGate.ticksSince,
+                                    minTradeIntervalTicks:
+                                        cfg.minTradeIntervalTicks,
+                                }
+                            );
                             continue;
                         }
 
@@ -1085,19 +1126,18 @@ export function makeStockManager(
                                 );
                                 posStateExec.targetShortShares = sharesFinal;
                                 posStateExec.entryPrice = snap?.bid ?? undefined;
-                                execOrder(
-                                    ns,
-                                    ctrl.stock as StockState,
-                                    symbols,
-                                    "SHORT",
-                                    sym,
-                                    sharesFinal,
-                                    cfg,
-                                    orderStats
-                                );
-                                setCooldown(ctrl.stock as StockState, sym, now, cfg.cooldownMs);
-                            },
-                        });
+                                    execOrder(
+                                        ns,
+                                        ctrl.stock as StockState,
+                                        symbols,
+                                        "SHORT",
+                                        sym,
+                                        sharesFinal,
+                                        cfg,
+                                        orderStats
+                                    );
+                                },
+                            });
                         if (added) {
                             grossExposure += priceUsed * sharesFinal;
                             cashForSizing = ns.getServerMoneyAvailable("home");
@@ -1226,13 +1266,37 @@ export function makeStockManager(
 // ============== Config ==============
 
 function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
+    const rebalanceMs = c.rebalanceMs ?? 6000;
+
+    const cooldownTicksFromMs =
+        c.cooldownMs !== undefined &&
+        (c.cooldownTicks === undefined || c.cooldownTicks === 0)
+            ? Math.max(
+                  0,
+                  Math.ceil((c.cooldownMs ?? 0) / Math.max(1, rebalanceMs))
+              )
+            : undefined;
+    const cooldownTicks =
+        c.cooldownTicks !== undefined
+            ? c.cooldownTicks
+            : cooldownTicksFromMs ?? 0;
+
+    const minTradeIntervalTicks =
+        c.minTradeIntervalTicks ??
+        (c.minHoldTicks !== undefined ? c.minHoldTicks : 15);
+    const minHoldAfterEntryTicks =
+        c.minHoldAfterEntryTicks ??
+        (c.minHoldTicks !== undefined ? c.minHoldTicks : 30);
+
     return {
         // runtime
-        rebalanceMs: c.rebalanceMs ?? 6000,
+        rebalanceMs,
         cooldownMs: c.cooldownMs ?? 20000,
-        cooldownTicks: c.cooldownTicks ?? 0,
+        cooldownTicks,
         decisionIntervalTicks: c.decisionIntervalTicks ?? 1,
-        minHoldTicks: c.minHoldTicks ?? 15,
+        minHoldTicks: minTradeIntervalTicks, // deprecated alias
+        minHoldAfterEntryTicks,
+        minTradeIntervalTicks,
         maxActionsPerTick: c.maxActionsPerTick ?? 6,
         logFile: c.logFile ?? "/logs/stock-manager.txt",
         logVerbosity: c.logVerbosity ?? "normal",
@@ -1279,6 +1343,15 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
         minPrice: c.minPrice ?? 5_000, // skip cheap noisy tickers
         minSignalFrac: c.minSignalFrac ?? 0.004,
         spreadEdgeBufferFrac: c.spreadEdgeBufferFrac ?? 0.001,
+
+        legacyMinHoldTicks:
+            c.minHoldTicks !== undefined &&
+            c.minHoldAfterEntryTicks === undefined &&
+            c.minTradeIntervalTicks === undefined
+                ? c.minHoldTicks
+                : undefined,
+        legacyCooldownMs:
+            cooldownTicksFromMs !== undefined ? c.cooldownMs : undefined,
     };
 }
 
@@ -1392,6 +1465,7 @@ function shouldLogEvent(
         "order_error",
         "external_spend_reset",
         "equity_peak_reset_boot",
+        "config_deprecated",
     ]);
 
     if (verbosity === "quiet") return quietAllowed.has(event);
@@ -1865,16 +1939,6 @@ function canEvaluateSymbol(
         evaluatedThisTick.add(sym);
     }
     return { ok: true };
-}
-
-function setCooldown(
-    stockState: StockState,
-    sym: string,
-    now: number,
-    cooldownMs: number
-): void {
-    if (!stockState.cooldownUntil) stockState.cooldownUntil = {};
-    stockState.cooldownUntil[sym] = now + cooldownMs;
 }
 
 function setTickCooldown(

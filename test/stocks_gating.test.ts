@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-    holdBlocked,
     isWithinTolerance,
     orderThresholdReasons,
+    tradeIntervalBlocked,
 } from "../src/app/stocks/logic.js";
 import type { NormalizedConfig } from "../src/domain/stocks/types.js";
 
@@ -13,6 +13,8 @@ const cfg: NormalizedConfig = {
     decisionIntervalTicks: 1,
     maxActionsPerTick: 0,
     minHoldTicks: 10,
+    minHoldAfterEntryTicks: 10,
+    minTradeIntervalTicks: 10,
     logFile: "/dev/null",
     logVerbosity: "quiet",
     use4S: false,
@@ -65,9 +67,13 @@ describe("order gating", () => {
         expect(reasons).toContain("min_notional");
     });
 
-    it("cooldown prevents immediate side flip", () => {
+    it("trade interval prevents immediate side flip", () => {
         const last = { tick: 10, side: "BUY" as const };
-        const res = holdBlocked(last, 12, cfg.minHoldTicks, "SELL");
+        const res = tradeIntervalBlocked(
+            last,
+            12,
+            cfg.minTradeIntervalTicks
+        );
         expect(res.blocked).toBe(true);
         expect(res.ticksSince).toBe(2);
     });
