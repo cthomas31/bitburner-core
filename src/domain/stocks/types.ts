@@ -11,6 +11,7 @@ export interface StockManagerConfig {
     maxActionsPerTick?: number;
     minHoldTicks?: number;
     logFile?: string;
+    logVerbosity?: "quiet" | "normal" | "debug";
 
     // If true, auto-upgrade to forecast mode when 4S is available
     use4S?: boolean;
@@ -64,6 +65,7 @@ export interface NormalizedConfig {
     maxActionsPerTick: number;
     minHoldTicks: number;
     logFile: string;
+    logVerbosity: "quiet" | "normal" | "debug";
     use4S: boolean;
     enterLong: number;
     exitLong: number;
@@ -114,6 +116,7 @@ export interface StockState {
     runId: string;
     logger: StockLogger;
     lastTrade?: Record<string, TradeNote>;
+    logVerbosity?: "quiet" | "normal" | "debug";
 }
 
 export type PositionMode = "FLAT" | "LONG" | "SHORT";
