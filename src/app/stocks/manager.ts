@@ -1415,15 +1415,69 @@ function modeFromHoldings(pos: { longShares: number; shortShares: number }): Pos
     return "FLAT";
 }
 
-function estimateEquityQuick(ns: NS, symbols: string[]): number {
-    // Quick conservative equity: cash + longs@bid - shorts@ask
-    let eq = ns.getServerMoneyAvailable("home");
+function shortLiquidationValue(shares: number, entryPx: number, coverPx: number): number {
+    if (shares <= 0) return 0;
+    // Cash already dropped by entryPx * shares when the short was opened.
+    // Liquidation equity contribution is locked cash + unrealized PnL.
+    return shares * (2 * entryPx - coverPx);
+}
+
+function computeLiquidationEquityQuick(
+    ns: NS,
+    symbols: string[]
+): { cash: number; longValue: number; shortValue: number; equity: number } {
+    const cash = ns.getServerMoneyAvailable("home");
+    let longValue = 0;
+    let shortValue = 0;
+
     for (const sym of symbols) {
-        const [l, , sh] = ns.stock.getPosition(sym);
-        if (l > 0) eq += ns.stock.getBidPrice(sym) * l;
-        if (sh > 0) eq -= ns.stock.getAskPrice(sym) * sh;
+        const bid = ns.stock.getBidPrice(sym);
+        const ask = ns.stock.getAskPrice(sym);
+        const [longShares, , shortShares, shortPx] = ns.stock.getPosition(sym);
+
+        if (longShares > 0) longValue += bid * longShares;
+        if (shortShares > 0) shortValue += shortLiquidationValue(shortShares, shortPx, ask);
     }
-    return eq;
+
+    return {
+        cash,
+        longValue,
+        shortValue,
+        equity: cash + longValue + shortValue,
+    };
+}
+
+function estimateEquityQuick(ns: NS, symbols: string[]): number {
+    return computeLiquidationEquityQuick(ns, symbols).equity;
+}
+
+function computeLiquidationEquityFromSnapshot(
+    ns: NS,
+    snapshot: SymbolSnapshot[]
+): { cash: number; longValue: number; shortValue: number; equity: number } {
+    const cash = ns.getServerMoneyAvailable("home");
+    let longValue = 0;
+    let shortValue = 0;
+
+    for (const s of snapshot) {
+        if (s.longShares > 0) {
+            longValue += s.bid * s.longShares;
+        }
+        if (s.shortShares > 0) {
+            shortValue += shortLiquidationValue(
+                s.shortShares,
+                s.shortPx,
+                s.ask
+            );
+        }
+    }
+
+    return {
+        cash,
+        longValue,
+        shortValue,
+        equity: cash + longValue + shortValue,
+    };
 }
 
 function grossExposureValue(ns: NS, symbols: string[]): number {
@@ -1494,11 +1548,48 @@ function execOrder(
     const p1 = posOf(ns, sym);
     const spreadCost = Math.abs(ask - bid) * sharesReq;
     const commission = ns.stock.getConstants().StockMarketCommission;
+    const equityDelta = equityAfter - equityBefore;
     if (stats) {
         stats.spreadCost += spreadCost;
         stats.commission += commission;
-        stats.realizedPnL += equityAfter - equityBefore;
+        stats.realizedPnL += equityDelta;
         stats.orders += 1;
+    }
+
+    if (
+        side === "SHORT" &&
+        sharesReq > 0 &&
+        ctrlStock.logVerbosity === "debug"
+    ) {
+        const midPrice = (bid + ask) / 2;
+        const filledShares = Math.max(0, p1.shortShares - p0.shortShares);
+        const sharesForCheck = filledShares > 0 ? filledShares : sharesReq;
+        const positionNotional = Math.abs(sharesForCheck) * midPrice;
+        const threshold = positionNotional * 0.05;
+        if (Math.abs(equityDelta) > threshold) {
+            logEvent(
+                ns,
+                ctrlStock,
+                "debug",
+                "equity_sanity_warn",
+                ctrlStock.logVerbosity,
+                {
+                    sym,
+                    side,
+                    sharesReq,
+                    equityBefore,
+                    equityAfter,
+                    equityDelta,
+                    positionNotional,
+                    threshold,
+                    bid,
+                    ask,
+                    shortPxBefore: p0.shortPx,
+                    shortPxAfter: p1.shortPx,
+                    filledShares,
+                }
+            );
+        }
     }
 
     if (!ctrlStock.lastTrade) ctrlStock.lastTrade = {};
@@ -1649,21 +1740,11 @@ function readSym(
     };
 }
 
-function estimateEquity(ns: NS, snapshot: SymbolSnapshot[]): number {
-    // Conservative mark-to-market equity estimate.
-    // Longs valued at bid; shorts valued as unrealized P/L using entry shortPx vs current ask.
-    // (Commission ignored here; it is handled as churn control elsewhere.)
-    let eq = ns.getServerMoneyAvailable("home");
-
-    for (const s of snapshot) {
-        if (s.longShares > 0) {
-            eq += s.bid * s.longShares;
-        }
-        if (s.shortShares > 0) {
-            eq -= s.ask * s.shortShares;
-        }
-    }
-    return eq;
+function estimateEquity(
+    ns: NS,
+    snapshot: SymbolSnapshot[]
+): number {
+    return computeLiquidationEquityFromSnapshot(ns, snapshot).equity;
 }
 
 // ============== Decision Logic ==============
