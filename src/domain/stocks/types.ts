@@ -215,3 +215,14 @@ export interface TradeNote {
 }
 
 export type OrderSide = "BUY" | "SELL" | "SHORT" | "COVER";
+
+export type Verbosity = "quiet" | "normal" | "debug";
+
+type ActionKind = "EXIT" | "ENTER";
+
+export type CandidateAction = {
+    sym: string;
+    side: OrderSide;
+    kind: ActionKind;
+    exec: () => void;
+};

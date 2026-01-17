@@ -1,15 +1,16 @@
-// /lib/stockManager.ts
-// BN8-ready stock trader that works WITH or WITHOUT 4S data.
-//
-// Modes:
-// - If 4S Market Data TIX API is available (ns.stock.has4SDataTIXAPI()), use forecast/volatility strategy.
-// - Otherwise, fall back to trend strategy using EMA crossover from locally maintained price history.
-//
-// Controller-friendly interface:
-//   const stockMgr = makeStockManager({...});
-//   await stockMgr.init(ns, ctrl);
-//   await stockMgr.tick(ns, ctrl, Date.now());
-//   for (const line of stockMgr.status(ctrl)) ns.print(line);
+/** /app/stocks/manager.ts
+ * BN8-ready stock trader that works WITH or WITHOUT 4S data.
+ *
+ * Modes:
+ * - If 4S Market Data TIX API is available (ns.stock.has4SDataTIXAPI()), use forecast/volatility strategy.
+ * - Otherwise, fall back to trend strategy using EMA crossover from locally maintained price history.
+ *
+ * Controller-friendly interface:
+ *   const stockMgr = makeStockManager({...});
+ *   await stockMgr.init(ns, ctrl);
+ *   await stockMgr.tick(ns, ctrl, Date.now());
+ *   for (const line of stockMgr.status(ctrl)) ns.print(line);
+ */
 
 import type { NS } from "@ns";
 import { readJSON, writeJSON } from "/lib/ns/io.js";
@@ -24,6 +25,8 @@ import {
     OrderSide,
     SymbolPositionState,
     PositionMode,
+    Verbosity,
+    CandidateAction
 } from "/domain/stocks/types.js";
 import type { ControllerState } from "/domain/controller/types.js";
 import {
@@ -40,17 +43,12 @@ import { StockLogger } from "/domain/stocks/logger.js";
 
 const STATE_FILE = "/data/stocks/state.json";
 
-type Verbosity = "quiet" | "normal" | "debug";
 
-type ActionKind = "EXIT" | "ENTER";
-
-type CandidateAction = {
-    sym: string;
-    side: OrderSide;
-    kind: ActionKind;
-    exec: () => void;
-};
-
+/**
+ * StockManager is a controller-friendly interface for managing stock trading.
+ * It abstracts the underlying trading logic and provides a simple API for
+ * initializing, ticking, and retrieving status information.
+ */
 export interface StockManager {
     name: string;
     init(ns: NS, ctrl: ControllerState): Promise<void>;
@@ -58,8 +56,11 @@ export interface StockManager {
     status(ctrl: ControllerState): string[];
 }
 
-// ============== Main Factory ==============
-
+/**
+ * Creates a new StockManager instance with the given configuration.
+ * @param config - The configuration options for the StockManager.
+ * @returns A new StockManager instance.
+ */
 export function makeStockManager(
     config: StockManagerConfig = {}
 ): StockManager {
@@ -1331,8 +1332,14 @@ export function makeStockManager(
     };
 }
 
-// ============== Config ==============
 
+/**
+ * Normalizes a StockManagerConfig object by filling in default values for any
+ * missing properties and converting deprecated properties to their modern
+ * equivalents.
+ * @param c - The StockManagerConfig object to normalize.
+ * @returns A NormalizedConfig object with all properties filled in.
+ */
 function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
     const rebalanceMs = c.rebalanceMs ?? 6000;
 
@@ -1426,6 +1433,16 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
     };
 }
 
+/**
+ * Ensures that the hysteresis parameters in the configuration are consistent.
+ * Specifically, it ensures that the enter thresholds are greater than the exit
+ * thresholds for both long and short positions, and that the trend enter
+ * threshold is greater than the trend exit threshold.
+ *
+ * @param ns - The NS object.
+ * @param stockState - The current stock state.
+ * @param cfg - The normalized configuration.
+ */
 function enforceHysteresis(
     ns: NS,
     stockState: StockState,
@@ -1485,26 +1502,54 @@ function enforceHysteresis(
     }
 }
 
+/**
+ * Returns the minimum cash balance that should be maintained by the StockManager.
+ * This is used to ensure that the controller never bricks the run (critical in BN8).
+ * 
+ * @param ns - The NS object.
+ * @param equity - The current equity value.
+ * @param cfg - The normalized configuration.
+ * @returns The minimum cash balance.
+ */
 function cashFloor(ns: NS, equity: number, cfg: NormalizedConfig): number {
     // Maintain an operating cash buffer so the controller never bricks the run (critical in BN8).
     return Math.max(cfg.minCashAbs, equity * cfg.minCashFrac);
 }
 
-// ============== Helpers ==============
-
 type LogLevel = "debug" | "info" | "warn" | "error";
 
+/**
+ * Generates a unique run ID for the StockManager instance.
+ *
+ * @returns A unique run ID string.
+ */
 function mkRunId(): string {
     return `${Date.now().toString(36)}-${Math.random()
         .toString(36)
         .slice(2, 8)}`;
 }
 
+/**
+ * Increments the tick counter for the StockManager instance.
+ *
+ * @param ctrlStock - The current stock state.
+ * @returns The new tick value.
+ */
 function bumpTick(ctrlStock: StockState): number {
     ctrlStock.tick += 1;
     return ctrlStock.tick;
 }
 
+/**
+ * Logs an event for the StockManager instance.
+ *
+ * @param ns - The NS object.
+ * @param ctrlStock - The current stock state.
+ * @param level - The log level.
+ * @param event - The event name.
+ * @param verbosity - The verbosity level.
+ * @param fields - Additional fields to log.
+ */
 function logEvent(
     ns: NS,
     ctrlStock: StockState,
@@ -1519,6 +1564,14 @@ function logEvent(
     ctrlStock.logger.log(level, event, { tick: ctrlStock.tick, ...fields });
 }
 
+/**
+ * Determines whether an event should be logged based on the current verbosity level.
+ * 
+ * @param level - The log level.
+ * @param event - The event name.
+ * @param verbosity - The verbosity level.
+ * @returns A boolean indicating whether the event should be logged.
+ */
 function shouldLogEvent(
     level: LogLevel,
     event: string,
@@ -1549,17 +1602,38 @@ function shouldLogEvent(
     return normalAllowed.has(event);
 }
 
+/**
+ * Returns the current position for a given stock symbol.
+ *
+ * @param ns - The NS object.
+ * @param sym - The stock symbol.
+ * @returns An object containing the long and short positions and their respective prices.
+ */
 function posOf(ns: NS, sym: string) {
     const [longShares, longPx, shortShares, shortPx] = ns.stock.getPosition(sym);
     return { longShares, longPx, shortShares, shortPx };
 }
 
+/**
+ * Determines the position mode (LONG, SHORT, FLAT) based on the current holdings.
+ *
+ * @param pos - An object containing the long and short positions.
+ * @returns The position mode (LONG, SHORT, FLAT).
+ */
 function modeFromHoldings(pos: { longShares: number; shortShares: number }): PositionMode {
     if (pos.longShares > 0) return "LONG";
     if (pos.shortShares > 0) return "SHORT";
     return "FLAT";
 }
 
+/**
+ * Calculates the liquidation value of a short position.
+ * 
+ * @param shares - The number of shares in the short position.
+ * @param entryPx - The entry price of the short position.
+ * @param coverPx - The cover price of the short position.
+ * @returns The liquidation value of the short position.
+ */
 function shortLiquidationValue(shares: number, entryPx: number, coverPx: number): number {
     if (shares <= 0) return 0;
     // Cash already dropped by entryPx * shares when the short was opened.
@@ -1567,6 +1641,13 @@ function shortLiquidationValue(shares: number, entryPx: number, coverPx: number)
     return shares * (2 * entryPx - coverPx);
 }
 
+/**
+ * Computes the liquidation equity for a set of symbols quickly using current market prices.
+ *
+ * @param ns - The NS object.
+ * @param symbols - An array of stock symbols.
+ * @returns An object containing the cash, long value, short value, and total equity.
+ */
 function computeLiquidationEquityQuick(
     ns: NS,
     symbols: string[]
@@ -1592,10 +1673,24 @@ function computeLiquidationEquityQuick(
     };
 }
 
+/**
+ * Estimates the total equity for a set of symbols quickly using current market prices.
+ *
+ * @param ns - The NS object.
+ * @param symbols - An array of stock symbols.
+ * @returns The estimated total equity.
+ */
 function estimateEquityQuick(ns: NS, symbols: string[]): number {
     return computeLiquidationEquityQuick(ns, symbols).equity;
 }
 
+/**
+ * Computes the liquidation equity for a set of symbols using a snapshot of their positions.
+ * 
+ * @param ns - The NS object.
+ * @param snapshot - An array of symbol snapshots.
+ * @returns An object containing the cash, long value, short value, and total equity.
+ */
 function computeLiquidationEquityFromSnapshot(
     ns: NS,
     snapshot: SymbolSnapshot[]
@@ -1625,6 +1720,13 @@ function computeLiquidationEquityFromSnapshot(
     };
 }
 
+/**
+ * Computes the gross exposure value for a set of symbols.
+ *
+ * @param ns - The NS object.
+ * @param symbols - An array of stock symbols.
+ * @returns The gross exposure value.
+ */
 function grossExposureValue(ns: NS, symbols: string[]): number {
     let gross = 0;
     for (const sym of symbols) {
@@ -1635,6 +1737,16 @@ function grossExposureValue(ns: NS, symbols: string[]): number {
     return gross;
 }
 
+/**
+ * Estimates the friction fraction for entering a position.
+ *
+ * @param ns - The NS object.
+ * @param snap - A snapshot of the symbol.
+ * @param shares - The number of shares to enter.
+ * @param side - The side of the order (BUY or SHORT).
+ * @param cfg - The normalized configuration.
+ * @returns The estimated friction fraction.
+ */ 
 function estimateFrictionFracForEntry(
     ns: NS,
     snap: SymbolSnapshot | undefined,
@@ -1660,6 +1772,18 @@ type TickStats = {
     orders: number;
 };
 
+/**
+ * Executes a stock order and updates the relevant statistics.
+ *
+ * @param ns - The NS object.
+ * @param ctrlStock - The stock state controller.
+ * @param symbols - An array of stock symbols.
+ * @param side - The side of the order (BUY, SELL, SHORT, COVER).
+ * @param sym - The stock symbol.
+ * @param sharesReq - The number of shares requested.
+ * @param cfg - The normalized configuration.
+ * @param stats - Optional tick statistics to update.
+ */
 function execOrder(
     ns: NS,
     ctrlStock: StockState,
@@ -1792,6 +1916,15 @@ function execOrder(
     }
 }
 
+/**
+ * Liquidates all positions for a set of symbols.
+ *
+ * @param ns - The NS object.
+ * @param ctrlStock - The stock state controller.
+ * @param symbols - An array of stock symbols.
+ * @param cfg - The normalized configuration.
+ * @returns The number of orders executed.
+ */
 function liquidateAll(
     ns: NS,
     ctrlStock: StockState,
@@ -1829,8 +1962,12 @@ function liquidateAll(
     return orders;
 }
 
-// ============== API Detection ==============
-
+/**
+ * Checks if the stock APIs are available.
+ *
+ * @param ns - The NS object.
+ * @returns True if the stock APIs are available, false otherwise.
+ */
 function hasStockApis(ns: NS): boolean {
     try {
         return !!ns && !!ns.stock && typeof ns.stock.getSymbols === "function";
@@ -1839,6 +1976,12 @@ function hasStockApis(ns: NS): boolean {
     }
 }
 
+/**
+ * Checks if the 4S data APIs are available.
+ *
+ * @param ns - The NS object.
+ * @returns True if the 4S data APIs are available, false otherwise.
+ */
 function has4SData(ns: NS): boolean {
     try {
         if (!ns || !ns.stock) return false;
@@ -1854,8 +1997,17 @@ function has4SData(ns: NS): boolean {
     }
 }
 
-// ============== Snapshot / State ==============
-
+/**
+ * Reads the current state of a symbol, including bid/ask prices, position, and 4S data if available.
+ *
+ * @param ns - The NS object.
+ * @param sym - The stock symbol.
+ * @param stockState - The stock state controller.
+ * @param now - The current timestamp.
+ * @param have4S - Whether 4S data is available.
+ * @param cfg - The normalized configuration.
+ * @returns A snapshot of the symbol's current state.
+ */
 function readSym(
     ns: NS,
     sym: string,
@@ -1903,6 +2055,13 @@ function readSym(
     };
 }
 
+/**
+ * Estimates the total equity for a set of symbols using a snapshot of their positions.
+ *
+ * @param ns - The NS object.
+ * @param snapshot - An array of symbol snapshots.
+ * @returns The estimated total equity.
+ */
 function estimateEquity(
     ns: NS,
     snapshot: SymbolSnapshot[]
@@ -1910,8 +2069,14 @@ function estimateEquity(
     return computeLiquidationEquityFromSnapshot(ns, snapshot).equity;
 }
 
-// ============== Decision Logic ==============
-
+/**
+ * Computes the desired positions for a set of symbols based on their forecast and volatility.
+ *
+ * @param snapshot - An array of symbol snapshots.
+ * @param equity - The total equity available for trading.
+ * @param cfg - The normalized configuration.
+ * @returns A map of symbol to desired position.
+ */
 function computeForecastDesires(
     snapshot: SymbolSnapshot[],
     equity: number,
@@ -1980,12 +2145,18 @@ function computeForecastDesires(
     return capDesires(scored, cfg, cfg.maxSymbolFrac, cfg.maxTotalFrac);
 }
 
+/**
+ * Ranks desires by their score in descending order.
+ */
 function rankDesires(desires: Map<string, Desire>): [string, Desire][] {
     return [...desires.entries()].sort(
         (a, b) => (b[1].score ?? 0) - (a[1].score ?? 0)
     );
 }
 
+/**
+ * Counts the number of open positions for a set of symbols.
+ */
 function countOpenPositions(ns: NS, symbols: string[]): number {
     let n = 0;
     for (const sym of symbols) {
@@ -1995,6 +2166,13 @@ function countOpenPositions(ns: NS, symbols: string[]): number {
     return n;
 }
 
+/**
+ * Counts the number of open long, short, and total positions for a set of symbols.
+ * 
+ * @param ns - The NS object.
+ * @param symbols - An array of stock symbols.
+ * @returns An object containing the counts of open long, short, and total positions.
+ */
 function openPositionCounts(
     ns: NS,
     symbols: string[]
@@ -2013,6 +2191,17 @@ function openPositionCounts(
     return { openLongs, openShorts, openSymbols };
 }
 
+/**
+ * Determines if a symbol can be evaluated for a trading decision.
+ *
+ * @param sym - The stock symbol.
+ * @param posState - The position state of the symbol.
+ * @param tick - The current logical tick.
+ * @param cfg - The normalized configuration.
+ * @param evaluatedThisTick - A set of symbols that have been evaluated this tick.
+ * @param preview - If true, do not update the last decision tick or evaluated set.
+ * @returns An object indicating if the symbol can be evaluated and the reason if not.
+ */
 function canEvaluateSymbol(
     sym: string,
     posState: SymbolPositionState,
@@ -2048,6 +2237,14 @@ function canEvaluateSymbol(
     return { ok: true };
 }
 
+/**
+ * Sets a cooldown period for a symbol, preventing it from being evaluated for a certain number of ticks.
+ *
+ * @param stockState - The stock state controller.
+ * @param sym - The stock symbol.
+ * @param tick - The current logical tick.
+ * @param cooldownTicks - The number of ticks to set the cooldown for.
+ */
 function setTickCooldown(
     stockState: StockState,
     sym: string,
@@ -2059,6 +2256,13 @@ function setTickCooldown(
     posState.cooldownUntilTick = tick + cooldownTicks;
 }
 
+/**
+ * Ensures that a symbol has a position state in the stock state.
+ *
+ * @param stockState - The stock state controller.
+ * @param sym - The stock symbol.
+ * @returns The position state for the symbol.
+ */
 function ensurePositionState(
     stockState: StockState,
     sym: string
@@ -2070,6 +2274,13 @@ function ensurePositionState(
     return stockState.positionsBySymbol[sym];
 }
 
+/**
+ * Synchronizes the position states with a snapshot of the current holdings.
+ *
+ * @param stockState - The stock state controller.
+ * @param snapshot - An array of symbol snapshots.
+ * @param tick - The current logical tick.
+ */
 function syncPositionStates(
     stockState: StockState,
     snapshot: SymbolSnapshot[],
@@ -2111,6 +2322,15 @@ function syncPositionStates(
     }
 }
 
+/**
+ * Updates the position state for a symbol based on its current holdings.
+ * 
+ * @param stockState - The stock state controller.
+ * @param sym - The stock symbol.
+ * @param pos - The current holdings for the symbol.
+ * @param tick - The current logical tick.
+ * 
+ */
 function updatePositionStateFromHoldings(
     stockState: StockState,
     sym: string,
@@ -2151,6 +2371,13 @@ function updatePositionStateFromHoldings(
     }
 }
 
+/**
+ * Persists the stock state to a JSON file.
+ *
+ * @param ns - The NS object.
+ * @param stockState - The stock state controller.
+ * @param cfg - The normalized configuration.
+ */
 async function persist(
     ns: NS,
     stockState: StockState,
@@ -2180,16 +2407,36 @@ async function persist(
     writeJSON(ns, STATE_FILE, toSave);
 }
 
-// ============== Math / Utils ==============
-
+/**
+ * Clamps a number between a lower and upper bound.
+ * 
+ * @param x - The number to clamp.
+ * @param lo - The lower bound.
+ * @param hi - The upper bound.
+ * @returns The clamped number.
+ */
 function clamp(x: number, lo: number, hi: number): number {
     return Math.max(lo, Math.min(hi, x));
 }
 
+/**
+ * Clamps an integer between a lower and upper bound.
+ * 
+ * @param x - The integer to clamp.
+ * @param lo - The lower bound.
+ * @param hi - The upper bound.
+ * @returns The clamped integer.
+ */
 function clampInt(x: number, lo: number, hi: number): number {
     return Math.max(lo, Math.min(hi, x | 0));
 }
 
+/**
+ * Formats a number into a human-readable string with suffixes.
+ * 
+ * @param n - The number to format.
+ * @returns The formatted string.
+ */
 function fmt(n: number): string {
     if (n >= 1e12) return (n / 1e12).toFixed(2) + "t";
     if (n >= 1e9) return (n / 1e9).toFixed(2) + "b";

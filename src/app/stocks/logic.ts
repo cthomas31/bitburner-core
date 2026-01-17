@@ -1,12 +1,24 @@
+/*
+* Stock trading logic
+*/
 import {
     Desire,
     NormalizedConfig,
     ScoredCandidate,
     SymbolSnapshot,
     TrendDebug,
+    OrderSide,
+    TradeNote,
 } from "/domain/stocks/types.js";
-import type { OrderSide, TradeNote } from "/domain/stocks/types.js";
 
+/** 
+ * Compute trend-based trading desires for a set of stock symbols.
+ * 
+ * @param snapshot - Current market snapshot for each symbol
+ * @param equity - Total equity available for trading
+ * @param cfg - Normalized configuration parameters
+ * @returns A map of trading desires and debug information
+ */
 export function computeTrendDesires(
     snapshot: SymbolSnapshot[],
     equity: number,
@@ -154,6 +166,14 @@ export function computeTrendDesires(
     };
 }
 
+/**
+ * Cap the trading desires based on per-symbol and total allocation limits.
+ * @param scored - List of scored trading candidates
+ * @param cfg - Normalized configuration parameters
+ * @param perSymbolFrac - Maximum fraction of equity to allocate per symbol
+ * @param totalCap - Maximum total fraction of equity to allocate
+ * @returns A map of trading desires
+ */
 export function capDesires(
     scored: ScoredCandidate[],
     cfg: NormalizedConfig,
@@ -186,11 +206,24 @@ export function capDesires(
     return desires;
 }
 
+/**
+ * Compute the drawdown fraction given the peak and current equity.
+ * @param equityPeak - The peak equity value
+ * @param equityNow - The current equity value
+ * @returns The drawdown fraction (0 to 1)
+ */
 export function drawdownFrac(equityPeak: number, equityNow: number): number {
     if (equityPeak <= 0) return 0;
     return Math.max(0, 1 - equityNow / equityPeak);
 }
 
+/**
+ * Determine whether trading should be halted based on drawdown.
+ * @param equityPeak - The peak equity value
+ * @param equityNow - The current equity value
+ * @param maxDrawdownFrac - The maximum allowed drawdown fraction
+ * @returns True if trading should be halted, false otherwise
+ */
 export function shouldKillOnDrawdown(
     equityPeak: number,
     equityNow: number,
@@ -201,6 +234,12 @@ export function shouldKillOnDrawdown(
     return dd >= maxDrawdownFrac;
 }
 
+/** 
+ * Compute the Exponential Moving Average (EMA) of an array of numbers.
+ * @param arr - Array of numbers
+ * @param period - The period over which to compute the EMA
+ * @returns The EMA value
+ */
 export function ema(arr: number[], period: number): number {
     const k = 2 / (period + 1);
     let v = arr[0];
@@ -208,10 +247,25 @@ export function ema(arr: number[], period: number): number {
     return v;
 }
 
+/**
+ * Clamp a number between a lower and upper bound.
+ * @param x - The number to clamp
+ * @param lo - The lower bound
+ * @param hi - The upper bound
+ * @returns The clamped number
+ */
 function clamp(x: number, lo: number, hi: number): number {
     return Math.max(lo, Math.min(hi, x));
 }
 
+/**
+ * Determine the reasons why an order may not meet the threshold criteria.
+ * @param deltaShares - The change in shares for the order
+ * @param notional - The notional value of the order
+ * @param cfg - Normalized configuration parameters
+ * @param side - The side of the order (optional)
+ * @returns A list of reasons why the order may not meet the threshold criteria
+ */
 export function orderThresholdReasons(
     deltaShares: number,
     notional: number,
@@ -226,6 +280,13 @@ export function orderThresholdReasons(
     return reasons;
 }
 
+/**
+ * Determine whether the current value is within a specified tolerance of the target value.
+ * @param currentValue - The current value
+ * @param targetValue - The target value
+ * @param toleranceFrac - The tolerance fraction
+ * @returns True if the current value is within the tolerance of the target value, false otherwise
+ */ 
 export function isWithinTolerance(
     currentValue: number,
     targetValue: number,
@@ -237,6 +298,14 @@ export function isWithinTolerance(
     return diff <= targetAbs * toleranceFrac;
 }
 
+/**
+ * Determine whether a hold order is blocked based on the minimum hold ticks.
+ * @param last - The last trade note
+ * @param tick - The current tick
+ * @param minHoldTicks - The minimum hold ticks
+ * @param side - The side of the order
+ * @returns An object indicating whether the hold is blocked and the number of ticks since the last trade
+ */
 export function holdBlocked(
     last: TradeNote | undefined,
     tick: number,
@@ -247,6 +316,13 @@ export function holdBlocked(
     return tradeIntervalBlocked(last, tick, minHoldTicks);
 }
 
+/**
+ * Determine whether a trade interval is blocked based on the minimum trade interval ticks.
+ * @param last - The last trade note
+ * @param tick - The current tick
+ * @param minTradeIntervalTicks - The minimum trade interval ticks
+ * @returns An object indicating whether the trade interval is blocked and the number of ticks since the last trade
+ */
 export function tradeIntervalBlocked(
     last: TradeNote | undefined,
     tick: number,
@@ -258,6 +334,13 @@ export function tradeIntervalBlocked(
     return { blocked: true, ticksSince };
 }
 
+/**
+ * Determine the reason why a spread signal may not meet the threshold criteria.
+ * @param spreadFrac - The spread fraction
+ * @param signalFrac - The signal fraction
+ * @param cfg - Normalized configuration parameters
+ * @returns A string indicating the reason why the spread signal may not meet the threshold criteria, or null if it does
+ */
 export function spreadSignalReason(
     spreadFrac: number,
     signalFrac: number | undefined,
