@@ -127,6 +127,7 @@ export interface SymbolPositionState {
     lastDecisionTick?: number;
     cooldownUntilTick?: number;
     targetLongShares?: number;
+    targetShortShares?: number;
     entryPrice?: number;
 }
 

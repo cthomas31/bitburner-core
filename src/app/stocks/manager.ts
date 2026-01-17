@@ -428,6 +428,24 @@ export function makeStockManager(
 
                 // Cover short if we no longer want short
                 if (shortShares > 0 && (!want || want.dir !== "SHORT")) {
+                    if (tick - enteredTick < cfg.minHoldTicks) {
+                        recordSkip("min_hold");
+                        logEvent(
+                            ns,
+                            ctrl.stock,
+                            "debug",
+                            "min_hold_skip",
+                            verbosity,
+                            {
+                                sym,
+                                tick,
+                                enteredTick,
+                                minHoldTicks: cfg.minHoldTicks,
+                            }
+                        );
+                        continue;
+                    }
+
                     const holdCheck = holdBlocked(
                         lastTrade,
                         tick,
@@ -799,6 +817,33 @@ export function makeStockManager(
                     // Use buyShort which is the actual Bitburner API name
                     if (typeof ns.stock.buyShort !== "function") continue; // shorts not available yet
 
+                    const isHoldingShort = shortShares > 0;
+                    if (isHoldingShort) {
+                        if (
+                            posState.targetShortShares === undefined ||
+                            posState.targetShortShares <= 0
+                        ) {
+                            posState.targetShortShares = shortShares;
+                        }
+                        if (want.targetShares > shortShares) {
+                            recordSkip("no_resize");
+                            logEvent(
+                                ns,
+                                ctrl.stock,
+                                "debug",
+                                "resize_blocked",
+                                verbosity,
+                                {
+                                    sym,
+                                    shortShares,
+                                    lockedShares: posState.targetShortShares,
+                                    desiredShares: want.targetShares,
+                                }
+                            );
+                        }
+                        continue;
+                    }
+
                     const shortMore = Math.max(
                         0,
                         want.targetShares - shortShares
@@ -849,9 +894,84 @@ export function makeStockManager(
                             continue;
                         }
 
+                        const priceUsed = snap?.bid ?? 0;
+                        const minNotional = cfg.minOrderNotional;
+                        const floor = cashFloor(ns, equityForSizing, cfg);
+                        const deployableCash = Math.max(
+                            0,
+                            cashForSizing - floor
+                        );
+                        const minSharesToClear =
+                            priceUsed > 0
+                                ? Math.ceil(minNotional / priceUsed)
+                                : 0;
+                        const sharesComputed = shortMore;
+                        const sharesBumpedTo =
+                            priceUsed > 0 &&
+                            sharesComputed * priceUsed < minNotional
+                                ? Math.max(sharesComputed, minSharesToClear)
+                                : sharesComputed;
+
+                        const caps: { label: string; shares: number }[] = [];
+                        const maxStockCap =
+                            snap?.maxShares !== undefined
+                                ? Math.max(0, snap.maxShares - shortShares)
+                                : Number.POSITIVE_INFINITY;
+                        caps.push({ label: "max_shares", shares: maxStockCap });
+
+                        const remainingSymbolValue = Math.max(
+                            0,
+                            equityForSizing * perSymbolCap -
+                                priceUsed * shortShares
+                        );
+                        caps.push({
+                            label: "max_symbol_cap",
+                            shares:
+                                priceUsed > 0
+                                    ? Math.floor(
+                                          remainingSymbolValue / priceUsed
+                                      )
+                                    : 0,
+                        });
+
+                        const remainingTotalValue = Math.max(
+                            0,
+                            equityForSizing * totalCap - grossExposure
+                        );
+                        caps.push({
+                            label: "max_total_cap",
+                            shares:
+                                priceUsed > 0
+                                    ? Math.floor(remainingTotalValue / priceUsed)
+                                    : 0,
+                        });
+
+                        caps.push({
+                            label: "cash_floor",
+                            shares:
+                                priceUsed > 0
+                                    ? Math.floor(deployableCash / priceUsed)
+                                    : 0,
+                        });
+
+                        let sharesFinal = sharesBumpedTo;
+                        let bindingConstraint: string | null = null;
+                        for (const cap of caps) {
+                            const capShares = Math.max(
+                                0,
+                                Math.floor(cap.shares)
+                            );
+                            if (capShares < sharesFinal) {
+                                sharesFinal = capShares;
+                                bindingConstraint = cap.label;
+                            }
+                        }
+                        const sharesAffordableCap = sharesFinal;
+                        const notionalFinal = priceUsed * sharesFinal;
+
                         const reasons = orderThresholdReasons(
-                            shortMore,
-                            (snap?.bid ?? 0) * shortMore,
+                            sharesFinal,
+                            notionalFinal,
                             cfg,
                             "SHORT"
                         );
@@ -862,42 +982,65 @@ export function makeStockManager(
                         );
                         if (spreadReason) reasons.push(spreadReason);
 
+                        if (reasons.includes("min_notional") && !bindingConstraint) {
+                            bindingConstraint = "min_notional";
+                        }
+
                         if (reasons.length > 0) {
                             reasons.forEach(recordSkip);
+                            const logFields: Record<string, unknown> = {
+                                sym,
+                                price: priceUsed,
+                                notional: notionalFinal,
+                                minNotional,
+                                deployableCash,
+                                side: "SHORT",
+                                sharesReq: sharesFinal,
+                                reasons,
+                            };
+                            if (reasons.includes("min_notional")) {
+                                logFields.priceUsed = priceUsed;
+                                logFields.sharesComputed = sharesComputed;
+                                logFields.sharesBumpedTo = sharesBumpedTo;
+                                logFields.sharesAffordableCap =
+                                    sharesAffordableCap;
+                                logFields.sharesFinal = sharesFinal;
+                                logFields.notionalFinal = notionalFinal;
+                                logFields.bindingConstraint =
+                                    bindingConstraint ?? "min_notional";
+                            }
+
                             logEvent(
                                 ns,
                                 ctrl.stock,
                                 "debug",
                                 "skip_order",
                                 verbosity,
-                                {
-                                    sym,
-                                    price: snap?.bid ?? 0,
-                                    notional: (snap?.bid ?? 0) * shortMore,
-                                    minNotional: cfg.minOrderNotional,
-                                    deployableCash:
-                                        cashForSizing -
-                                        cashFloor(ns, equityForSizing, cfg),
-                                    side: "SHORT",
-                                    sharesReq: shortMore,
-                                    reasons,
-                                }
+                                logFields
                             );
                             continue;
                         }
+
+                        if (sharesFinal <= 0) continue;
 
                         const added = addCandidate({
                             sym,
                             side: "SHORT",
                             kind: "ENTER",
                             exec: () => {
+                                const posStateExec = ensurePositionState(
+                                    ctrl.stock as StockState,
+                                    sym
+                                );
+                                posStateExec.targetShortShares = sharesFinal;
+                                posStateExec.entryPrice = snap?.bid ?? undefined;
                                 execOrder(
                                     ns,
                                     ctrl.stock as StockState,
                                     symbols,
                                     "SHORT",
                                     sym,
-                                    shortMore,
+                                    sharesFinal,
                                     cfg,
                                     orderStats
                                 );
@@ -905,7 +1048,7 @@ export function makeStockManager(
                             },
                         });
                         if (added) {
-                            grossExposure += (snap?.bid ?? 0) * shortMore;
+                            grossExposure += priceUsed * sharesFinal;
                             cashForSizing = ns.getServerMoneyAvailable("home");
                             equityForSizing = estimateEquityQuick(ns, symbols);
                             if (isNew) openCount++;
@@ -987,12 +1130,17 @@ export function makeStockManager(
                 cashEnd
             )} desires=${desires.size}${debugStr}`;
 
+            const openLongs = snapshot.filter((s) => s.longShares > 0).length;
+            const openShorts = snapshot.filter((s) => s.shortShares > 0).length;
+
             logEvent(ns, ctrl.stock, "info", "rebalance_summary", verbosity, {
                 tick,
                 mode: ctrl.stock.lastMode,
                 actions,
                 plannedSymbols: plannedSymbols.size,
                 openSymbols: countOpenPositions(ns, symbols),
+                openLongs,
+                openShorts,
                 cashStart: cash,
                 cashEnd,
                 equityStart: equity,
@@ -1100,6 +1248,26 @@ function enforceHysteresis(
             exitBefore,
             enterAfter: cfg.enterLong,
             exitAfter: cfg.exitLong,
+        });
+    }
+
+    if (cfg.enterShort >= cfg.exitShort) {
+        const enterBefore = cfg.enterShort;
+        const exitBefore = cfg.exitShort;
+        cfg.enterShort = Math.max(
+            0,
+            Math.min(enterBefore, exitBefore) - epsilon
+        );
+        cfg.exitShort = Math.min(
+            0.999999,
+            Math.max(enterBefore, exitBefore)
+        );
+        logEvent(ns, stockState, "warn", "hysteresis_fix", stockState.logVerbosity, {
+            mode: "forecast_short",
+            enterBefore,
+            exitBefore,
+            enterAfter: cfg.enterShort,
+            exitAfter: cfg.exitShort,
         });
     }
 
@@ -1606,15 +1774,23 @@ function syncPositionStates(
             ) {
                 posState.targetLongShares = s.longShares;
             }
+            posState.targetShortShares = undefined;
         } else if (hasShort) {
             if (posState.mode !== "SHORT") posState.mode = "SHORT";
             if (posState.enteredTick === undefined) posState.enteredTick = tick;
+            if (
+                posState.targetShortShares === undefined ||
+                posState.targetShortShares <= 0
+            ) {
+                posState.targetShortShares = s.shortShares;
+            }
             posState.targetLongShares = undefined;
             posState.entryPrice = undefined;
         } else {
             posState.mode = "FLAT";
             posState.enteredTick = undefined;
             posState.targetLongShares = undefined;
+            posState.targetShortShares = undefined;
             posState.entryPrice = undefined;
         }
     }
@@ -1639,15 +1815,23 @@ function updatePositionStateFromHoldings(
         ) {
             posState.targetLongShares = pos.longShares;
         }
+        posState.targetShortShares = undefined;
     } else if (hasShort) {
         posState.mode = "SHORT";
         if (posState.enteredTick === undefined) posState.enteredTick = tick;
+        if (
+            posState.targetShortShares === undefined ||
+            posState.targetShortShares <= 0
+        ) {
+            posState.targetShortShares = pos.shortShares;
+        }
         posState.targetLongShares = undefined;
         posState.entryPrice = undefined;
     } else {
         posState.mode = "FLAT";
         posState.enteredTick = undefined;
         posState.targetLongShares = undefined;
+        posState.targetShortShares = undefined;
         posState.entryPrice = undefined;
     }
 }
