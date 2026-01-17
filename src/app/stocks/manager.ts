@@ -991,7 +991,7 @@ export function makeStockManager(
                 tick,
                 mode: ctrl.stock.lastMode,
                 actions,
-                evaluatedSymbols: plannedSymbols.size,
+                plannedSymbols: plannedSymbols.size,
                 openSymbols: countOpenPositions(ns, symbols),
                 cashStart: cash,
                 cashEnd,
@@ -1277,7 +1277,6 @@ function execOrder(
     }
 
     if (!ctrlStock.lastTrade) ctrlStock.lastTrade = {};
-    ctrlStock.lastTrade[sym] = { tick: ctrlStock.tick, side };
 
     updatePositionStateFromHoldings(ctrlStock, sym, p1, ctrlStock.tick);
     const modeBefore = modeFromHoldings(p0);
@@ -1290,27 +1289,28 @@ function execOrder(
         });
     }
     if (ret !== null) {
+        ctrlStock.lastTrade[sym] = { tick: ctrlStock.tick, side };
         setTickCooldown(ctrlStock, sym, ctrlStock.tick, cfg.cooldownTicks);
-    }
 
-    logEvent(ns, ctrlStock, "info", "order", ctrlStock.logVerbosity, {
-        sym,
-        side,
-        sharesReq,
-        ret,
-        bid,
-        ask,
-        spreadCost,
-        commission,
-        cashBefore,
-        cashAfter,
-        equityBefore,
-        equityAfter,
-        posBefore: p0,
-        posAfter: p1,
-        deltaLong: p1.longShares - p0.longShares,
-        deltaShort: p1.shortShares - p0.shortShares,
-    });
+        logEvent(ns, ctrlStock, "info", "order", ctrlStock.logVerbosity, {
+            sym,
+            side,
+            sharesReq,
+            ret,
+            bid,
+            ask,
+            spreadCost,
+            commission,
+            cashBefore,
+            cashAfter,
+            equityBefore,
+            equityAfter,
+            posBefore: p0,
+            posAfter: p1,
+            deltaLong: p1.longShares - p0.longShares,
+            deltaShort: p1.shortShares - p0.shortShares,
+        });
+    }
 }
 
 function liquidateAll(

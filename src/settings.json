@@ -109,7 +109,7 @@
     "stocks.trend.longOnly": true,
     "stocks.trend.maxSymbolFrac": 0.1,
     "stocks.trend.maxTotalFrac": 0.5,
-    "stocks.trend.maxSpreadFrac": 0.01,
+    "stocks.trend.maxSpreadFrac": 0.02,
     "stocks.trend.minPrice": 1,
 
     "batcher.tickMs": 125,
