@@ -62,20 +62,23 @@ export interface StockManager {
  * @returns A new StockManager instance.
  */
 export function makeStockManager(
-    getConfigCallback: () => StockManagerConfig
+    getConfig: StockManagerConfig | (() => StockManagerConfig)
 ): StockManager {
-    const cfg = normalizeConfig(getConfigCallback());
-
-    const verbosity: Verbosity = cfg.logVerbosity;
-
+    const getConfigCallback =
+        typeof getConfig === "function"
+            ? (getConfig as () => StockManagerConfig)
+            : () => getConfig;
     return {
         name: "stocks",
 
         async init(ns: NS, ctrl: ControllerState): Promise<void> {
+            const cfg = normalizeConfig(getConfigCallback());
+            const verbosity: Verbosity = cfg.logVerbosity;
+
             if (!hasStockApis(ns)) {
                 ctrl.stock = {
                     enabled: false,
-                    entriesPaused: false,
+                    entriesPaused: cfg.pauseEntries,
                     reason: "NO_STOCK_APIS",
                     lastRebalance: 0,
                     cooldownUntil: {},
@@ -105,7 +108,7 @@ export function makeStockManager(
             const runId = mkRunId();
             ctrl.stock = {
                 enabled: true,
-                entriesPaused: st.entriesPaused ?? false,
+                entriesPaused: cfg.pauseEntries,
                 lastRebalance: st.lastRebalance ?? 0,
                 cooldownUntil: st.cooldownUntil ?? {}, // sym -> ms
                 positionsBySymbol: st.positionsBySymbol ?? {}, // sym -> position state
@@ -176,7 +179,21 @@ export function makeStockManager(
         },
 
         async tick(ns: NS, ctrl: ControllerState, now: number): Promise<void> {
+            const cfg = normalizeConfig(getConfigCallback());
+            const verbosity: Verbosity = cfg.logVerbosity;
+
             if (!ctrl.stock?.enabled) return;
+
+            const prevVerbosity = ctrl.stock.logVerbosity;
+            ctrl.stock.entriesPaused = cfg.pauseEntries;
+            if (prevVerbosity !== verbosity) {
+                ctrl.stock.logger.flush();
+                ctrl.stock.logger = new StockLogger(ns, ctrl.stock.runId, {
+                    file: cfg.logFile,
+                    minLevel: verbosity === "debug" ? "debug" : "info",
+                });
+            }
+            ctrl.stock.logVerbosity = verbosity;
 
             // throttle
             if (now - (ctrl.stock.lastRebalance ?? 0) < cfg.rebalanceMs) return;
