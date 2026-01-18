@@ -1292,6 +1292,7 @@ export function makeStockManager(
             )} desires=${desires.size}${debugStr}`;
 
             const openCounts = openPositionCounts(ns, symbols);
+            const skipFrictionEdge = skipCounts["friction_edge"] ?? 0;
 
             logEvent(ns, ctrl.stock, "info", "rebalance_summary", verbosity, {
                 tick,
@@ -1307,6 +1308,7 @@ export function makeStockManager(
                 equityEnd,
                 desires: desires.size,
                 skipsByReason: skipCounts,
+                skipFrictionEdge,
                 orders: orderStats.orders,
             });
 
