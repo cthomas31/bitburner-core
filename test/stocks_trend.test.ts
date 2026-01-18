@@ -6,6 +6,7 @@ import type {
 } from "../src/domain/stocks/types.js";
 
 const baseCfg: NormalizedConfig = {
+    pauseEntries: false,
     rebalanceMs: 6000,
     cooldownMs: 20_000,
     cooldownTicks: 0,

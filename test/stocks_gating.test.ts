@@ -7,6 +7,7 @@ import {
 import type { NormalizedConfig } from "../src/domain/stocks/types.js";
 
 const cfg: NormalizedConfig = {
+    pauseEntries: false,
     rebalanceMs: 0,
     cooldownMs: 0,
     cooldownTicks: 0,
