@@ -4,6 +4,7 @@ import { StockLogger } from "/domain/stocks/logger.js";
 
 export interface StockManagerConfig {
     // runtime
+    pauseEntries?: boolean;
     rebalanceMs?: number;
     cooldownMs?: number;
     cooldownTicks?: number;
@@ -66,6 +67,7 @@ export interface StockManagerConfig {
 }
 
 export interface NormalizedConfig {
+    pauseEntries: boolean;
     rebalanceMs: number;
     cooldownMs: number;
     cooldownTicks: number;
@@ -121,6 +123,7 @@ export interface PriceEntry {
 
 export interface StockState {
     enabled: boolean;
+    entriesPaused: boolean;
     reason?: string;
     lastRebalance: number;
     cooldownUntil: Record<string, number>;

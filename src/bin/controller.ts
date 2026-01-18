@@ -121,7 +121,7 @@ export async function main(ns: NS): Promise<void> {
         statusMessages: [],
     };
 
-    const stockMgr: StockManager = makeStockManager(getStockManagerConfig(ns));
+    const stockMgr: StockManager = makeStockManager(() => getStockManagerConfig(ns));
     await stockMgr.init(ns, ctrl);
 
     // Ensure results dir exists (write a noop file)

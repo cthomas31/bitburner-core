@@ -4,6 +4,7 @@ import type { StockManagerConfig } from "/domain/stocks/types.js";
 
 export function getStockManagerConfig(ns: NS): StockManagerConfig {
     return {
+        pauseEntries: getBool(ns, "stocks.pauseEntries"),
         rebalanceMs: getNumber(ns, "stocks.rebalanceMs"),
         cooldownMs: getNumber(ns, "stocks.cooldownMs"),
         cooldownTicks: getNumber(ns, "stocks.cooldownTicks"),

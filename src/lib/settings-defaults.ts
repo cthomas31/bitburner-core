@@ -90,6 +90,7 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "pserv.manager.activeLoopMs": 5_000,
 
     // Stocks
+    "stocks.pauseEntries": false,
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20_000,
     "stocks.cooldownTicks": 0,

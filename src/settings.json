@@ -83,6 +83,7 @@
     "pserv.manager.idleLoopMs": 60000,
     "pserv.manager.activeLoopMs": 5000,
 
+    "stocks.pauseEntries": false,
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20000,
     "stocks.cooldownTicks": 15,

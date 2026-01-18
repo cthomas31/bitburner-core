@@ -32,7 +32,7 @@ export async function main(ns: NS): Promise<void> {
 
     // Display the top five targets in a human-readable format
     if (targets.length === 0) {
-        ns.tprint("score-targets: no hackable servers found");
+        //ns.tprint("score-targets: no hackable servers found");
         return;
     }
 
@@ -50,5 +50,5 @@ export async function main(ns: NS): Promise<void> {
     const topTargets =
         `Player hacking level ${hackingLevel} Formulas unlocked: ${haveFormulas ? "yes" : "no"}\nTop targets:\n` +
         targets.slice(0, 4).map(renderTarget).join("\n");
-    ns.tprint(topTargets);
+    //ns.tprint(topTargets);
 }

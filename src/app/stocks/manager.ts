@@ -62,9 +62,9 @@ export interface StockManager {
  * @returns A new StockManager instance.
  */
 export function makeStockManager(
-    config: StockManagerConfig = {}
+    getConfigCallback: () => StockManagerConfig
 ): StockManager {
-    const cfg = normalizeConfig(config);
+    const cfg = normalizeConfig(getConfigCallback());
 
     const verbosity: Verbosity = cfg.logVerbosity;
 
@@ -75,6 +75,7 @@ export function makeStockManager(
             if (!hasStockApis(ns)) {
                 ctrl.stock = {
                     enabled: false,
+                    entriesPaused: false,
                     reason: "NO_STOCK_APIS",
                     lastRebalance: 0,
                     cooldownUntil: {},
@@ -104,6 +105,7 @@ export function makeStockManager(
             const runId = mkRunId();
             ctrl.stock = {
                 enabled: true,
+                entriesPaused: st.entriesPaused ?? false,
                 lastRebalance: st.lastRebalance ?? 0,
                 cooldownUntil: st.cooldownUntil ?? {}, // sym -> ms
                 positionsBySymbol: st.positionsBySymbol ?? {}, // sym -> position state
@@ -899,6 +901,11 @@ export function makeStockManager(
                                 continue;
                             }
 
+                            if (cfg.pauseEntries) {
+                                recordSkip("entries_paused");
+                                continue;
+                            }
+
                             const added = addCandidate({
                                 sym,
                                 side: "BUY",
@@ -1185,6 +1192,11 @@ export function makeStockManager(
                             continue;
                         }
 
+                        if (cfg.pauseEntries) {
+                            recordSkip("entries_paused");
+                            continue;
+                        }
+
                         const added = addCandidate({
                             sym,
                             side: "SHORT",
@@ -1292,7 +1304,6 @@ export function makeStockManager(
             )} desires=${desires.size}${debugStr}`;
 
             const openCounts = openPositionCounts(ns, symbols);
-            const skipFrictionEdge = skipCounts["friction_edge"] ?? 0;
 
             logEvent(ns, ctrl.stock, "info", "rebalance_summary", verbosity, {
                 tick,
@@ -1308,8 +1319,8 @@ export function makeStockManager(
                 equityEnd,
                 desires: desires.size,
                 skipsByReason: skipCounts,
-                skipFrictionEdge,
                 orders: orderStats.orders,
+                entriesPaused: cfg.pauseEntries,
             });
 
             executedOrdersThisTick = orderStats.orders;
@@ -1325,7 +1336,7 @@ export function makeStockManager(
 
             // We avoid calling ns here since controller may call status without ns in scope.
             return [
-                `stocks: enabled mode=${ctrl.stock.lastMode}`,
+                `stocks: enabled mode=${ctrl.stock.lastMode}${ctrl.stock.entriesPaused ? " [ENTRIES PAUSED]" : ""}`,
                 `stocks: last=${new Date(
                     ctrl.stock.lastRebalance
                 ).toLocaleTimeString()} status=${ctrl.stock.lastStatus}`,
@@ -1343,6 +1354,7 @@ export function makeStockManager(
  * @returns A NormalizedConfig object with all properties filled in.
  */
 function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
+    const pauseEntries = c.pauseEntries ?? false;
     const rebalanceMs = c.rebalanceMs ?? 6000;
 
     const cooldownTicksFromMs =
@@ -1367,6 +1379,7 @@ function normalizeConfig(c: StockManagerConfig): NormalizedConfig {
 
     return {
         // runtime
+        pauseEntries,
         rebalanceMs,
         cooldownMs: c.cooldownMs ?? 20000,
         cooldownTicks,
