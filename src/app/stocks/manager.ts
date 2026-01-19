@@ -892,7 +892,11 @@ export function makeStockManager(
                                 cfg
                             );
                             const expectedEdgeFrac = have4S
-                                ? Math.abs((snap?.forecast ?? 0) - 0.5)
+                                ? Math.max(
+                                      0,
+                                      (snap?.forecast ?? 0) -
+                                          cfg.forecast.enterLong
+                                  )
                                 : Math.abs(want.signalFrac ?? 0);
                             if (
                                 cfg.frictionMinEdgeFrac > 0 &&
@@ -1183,7 +1187,11 @@ export function makeStockManager(
                             cfg
                         );
                         const expectedEdgeFrac = have4S
-                            ? Math.abs((snap?.forecast ?? 0) - 0.5)
+                            ? Math.max(
+                                  0,
+                                  cfg.forecast.enterShort -
+                                      (snap?.forecast ?? 0)
+                              )
                             : Math.abs(want.signalFrac ?? 0);
                         if (
                             cfg.frictionMinEdgeFrac > 0 &&
