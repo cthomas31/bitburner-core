@@ -83,15 +83,23 @@
     "pserv.manager.idleLoopMs": 60000,
     "pserv.manager.activeLoopMs": 5000,
 
+    // Conservative settings for less active trading
+    // "stocks.decisionIntervalTicks": 4,
+    // "stocks.cash.minCashFrac": 0.15,
+    // "stocks.friction.minEdgeFrac": 0.004,
+
+    // Bolder settings for more active trading
+    "stocks.decisionIntervalTicks": 2,
+    "stocks.cash.minCashFrac": 0.10,
+    "stocks.friction.minEdgeFrac": 0.003,
+
     "stocks.pauseEntries": false,
+    "stocks.minHoldAfterEntryTicks": 20,
+    "stocks.minTradeIntervalTicks": 10,
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20000,
-    "stocks.cooldownTicks": 15,
-    "stocks.decisionIntervalTicks": 4,
-    "stocks.minHoldTicks": 30,
-    "minHoldAfterEntryTicks": 20,
-    "stocks.minTradeIntervalTicks": 10,
-    "stocks.maxActionsPerTick": 2,
+    "stocks.cooldownTicks": 8,
+    "stocks.maxActionsPerTick": 4,
     "stocks.logFile": "/logs/stock-manager.txt",
     "stocks.use4S": true,
     "stocks.forecast.enterLong": 0.6,
@@ -107,7 +115,6 @@
     "stocks.sizing.maxTotalFrac": 0.8,
     "stocks.sizing.maxOpenSymbols": 8,
     "stocks.cash.minCashAbs": 50000000,
-    "stocks.cash.minCashFrac": 0.1,
     "stocks.risk.maxDrawdownFrac": 0.15,
     "stocks.risk.pauseAfterKillMs": 300000,
     "stocks.externalSpendResetFrac": 0.5,
@@ -117,8 +124,6 @@
     "stocks.trend.maxTotalFrac": 0.35,
     "stocks.trend.maxSpreadFrac": 0.02,
     "stocks.trend.minPrice": 1,
-
-    "stocks.friction.minEdgeFrac": 0.003,
     "stocks.friction.includeCommission": true,
 
     "batcher.tickMs": 125,

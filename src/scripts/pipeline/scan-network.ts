@@ -71,7 +71,7 @@ export async function main(ns: NS): Promise<void> {
     });
 
     writeJSON(ns, networkFile, network);
-    ns.tprint(
-        `scan-network: discovered ${Object.keys(network).length} servers (saved to ${networkFile})`
-    );
+    // ns.tprint(
+    //     `scan-network: discovered ${Object.keys(network).length} servers (saved to ${networkFile})`
+    // );
 }
