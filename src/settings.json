@@ -83,12 +83,6 @@
     "pserv.manager.idleLoopMs": 60000,
     "pserv.manager.activeLoopMs": 5000,
 
-    // Conservative settings for less active trading
-    // "stocks.decisionIntervalTicks": 4,
-    // "stocks.cash.minCashFrac": 0.15,
-    // "stocks.friction.minEdgeFrac": 0.004,
-
-    // Bolder settings for more active trading
     "stocks.decisionIntervalTicks": 2,
     "stocks.cash.minCashFrac": 0.10,
     "stocks.friction.minEdgeFrac": 0.003,

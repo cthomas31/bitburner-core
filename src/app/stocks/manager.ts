@@ -895,7 +895,7 @@ export function makeStockManager(
                                 ? Math.max(
                                       0,
                                       (snap?.forecast ?? 0) -
-                                          cfg.forecast.enterLong
+                                          cfg.enterLong
                                   )
                                 : Math.abs(want.signalFrac ?? 0);
                             if (
@@ -1189,7 +1189,7 @@ export function makeStockManager(
                         const expectedEdgeFrac = have4S
                             ? Math.max(
                                   0,
-                                  cfg.forecast.enterShort -
+                                  cfg.enterShort -
                                       (snap?.forecast ?? 0)
                               )
                             : Math.abs(want.signalFrac ?? 0);
