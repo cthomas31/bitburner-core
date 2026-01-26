@@ -38,6 +38,7 @@ function makeCtrl(): ControllerState {
         lastFactionCacheUpdateTs: 0,
         pendingPurchase: null,
         ensureBackoff: {},
+        xpDeployArmed: false,
         statusMessages: [],
         ownedSet: new Set<string>(),
     };

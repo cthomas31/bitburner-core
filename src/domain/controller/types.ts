@@ -25,6 +25,7 @@ export interface ControllerConfig {
     gangManager: string;
     pservManager: string;
 
+    xpTargetCount: number;
     hackingWorkloadMode: "AUTO" | "MONEY" | "XP";
 
     enableGangManager: boolean;

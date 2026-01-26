@@ -1,12 +1,14 @@
 /**
  *
- * Fill pservs (or all rooted servers) with xp-worker.js pointed at best XP target.
+ * Fill pservs (or all rooted servers) with XP weaken-only workers pointed at top XP targets.
  */
 
 import type { NS } from "@ns";
-import { getBestXpTarget } from "/lib/targets.js";
+import { getBestXpTargets } from "/lib/targets.js";
+import { getNumber } from "/lib/settings.js";
 
-const XP_SCRIPT = "/workers/xp.js";
+const XP_SCRIPT = "/workers/xp_weaken.js";
+const LEGACY_XP_SCRIPT = "/workers/xp.js";
 
 export async function main(ns: NS): Promise<void> {
     ns.disableLog("scan");
@@ -17,11 +19,16 @@ export async function main(ns: NS): Promise<void> {
 
     const useOnlyPservs = false; // set false if you want all rooted servers, not just pservs
 
-    // 1) Pick best XP target via Formulas
-    const xpTargetInfo = getBestXpTarget(ns);
-    const xpTarget = xpTargetInfo?.hostname || "n00dles";
-    //const xpTarget = "joesguns"; // temporarily disable Formulas use
-    ns.tprint(`[deploy-xp] Best XP target selected: ${xpTarget}`);
+    const configuredTargetCount = getNumber(ns, "controller.hacking.xpTargetCount");
+    const argTargetCount = Number(ns.args[0]);
+    const xpTargetCount = Number.isFinite(argTargetCount) && argTargetCount > 0
+        ? Math.floor(argTargetCount)
+        : Math.max(1, Math.floor(configuredTargetCount || 1));
+
+    // 1) Pick best XP targets
+    const xpTargets = await getBestXpTargets(ns, xpTargetCount);
+    const xpTargetNames = xpTargets.map(t => t.hostname);
+    ns.tprint(`[deploy-xp] XP targets selected (${xpTargets.length}): ${xpTargetNames.join(", ")}`);
 
     // 2) Determine script RAM
     const scriptRam = ns.getScriptRam(XP_SCRIPT);
@@ -40,11 +47,13 @@ export async function main(ns: NS): Promise<void> {
 
     // 4) Deploy xp-worker.js to each host and fill with threads
     for (const host of hosts) {
-        if (host === "home") continue; // optional, keep home clean
-
-        // Kill everything on the host so XP gets full RAM
+        // Kill only XP workers we own
         const procs = ns.ps(host);
-        for (const p of procs) ns.kill(p.pid);
+        for (const p of procs) {
+            if (p.filename === XP_SCRIPT || p.filename === LEGACY_XP_SCRIPT) {
+                ns.kill(p.pid);
+            }
+        }
 
         // Copy script
         await ns.scp(XP_SCRIPT, host);
@@ -59,12 +68,24 @@ export async function main(ns: NS): Promise<void> {
             continue;
         }
 
-        const pid = ns.exec(XP_SCRIPT, host, threads, xpTarget);
-        if (pid === 0) {
-            ns.print(`[deploy-xp] Failed to start XP worker on ${host}`);
-        } else {
-            ns.tprint(`[deploy-xp] ${host}: xp-worker.js x${threads} -> ${xpTarget}`);
+        // Round-robin distribute threads across targets
+        const allocations = new Map<string, number>();
+        for (let i = 0; i < threads; i++) {
+            const target = xpTargets[i % xpTargets.length].hostname;
+            allocations.set(target, (allocations.get(target) ?? 0) + 1);
         }
+
+        const results: string[] = [];
+        for (const [target, t] of allocations) {
+            const pid = ns.exec(XP_SCRIPT, host, t, target);
+            if (pid === 0) {
+                ns.print(`[deploy-xp] Failed to start XP worker on ${host} -> ${target}`);
+            } else {
+                results.push(`${target} x${t}`);
+            }
+        }
+
+        ns.tprint(`[deploy-xp] ${host}: ${results.join(", ")}`);
     }
 }
 

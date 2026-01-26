@@ -36,7 +36,7 @@ export function ensureDesiredRunning(
         else ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [target]);
     } else if (mode === "XP") {
         if (ctrl.xpDeployArmed) {
-            const pid = ns.run(CFG.xpDeploy, 1);
+            const pid = ns.run(CFG.xpDeploy, 1, CFG.xpTargetCount);
             if (pid !== 0) {
                 ctrl.xpDeployArmed = false;
                 ns.print("XP deploy armed -> running once");

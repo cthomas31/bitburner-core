@@ -38,6 +38,7 @@ export function getControllerConfig(ns: NS): ControllerConfig {
             "controller.scripts.batchOrchestrator"
         ),
         xpDeploy: getString(ns, "controller.scripts.xpDeploy"),
+        xpTargetCount: getNumber(ns, "controller.hacking.xpTargetCount"),
         gangManager: getString(ns, "controller.scripts.gangManager"),
         pservManager: getString(ns, "controller.scripts.pservManager"),
         hackingWorkloadMode: getString(ns, "controller.hacking.workloadMode") as
