@@ -173,6 +173,9 @@ export interface ControllerState {
 
     ensureBackoff: Record<string, number>;
 
+    // When true, XP deploy script will be started once on the next XP tick
+    xpDeployArmed: boolean;
+
     statusMessages: string[];
 
     ownedSet?: Set<string>;

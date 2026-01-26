@@ -18,6 +18,7 @@ export function reconcileWorkload(ns: NS, CFG: ControllerConfig, ctrl: Controlle
     ctrl.lastTargetApplied = target;
 
     ctrl.ensureBackoff = {};
+    ctrl.xpDeployArmed = true;
 }
 
 export function ensureDesiredRunning(
@@ -34,7 +35,13 @@ export function ensureDesiredRunning(
         if (formulas) ensureOnce(ns, ctrl, CFG.batchOrchestrator);
         else ensureOnce(ns, ctrl, CFG.hgwOrchestrator, [target]);
     } else if (mode === "XP") {
-        ensureOnce(ns, ctrl, CFG.xpDeploy);
+        if (ctrl.xpDeployArmed) {
+            const pid = ns.run(CFG.xpDeploy, 1);
+            if (pid !== 0) {
+                ctrl.xpDeployArmed = false;
+                ns.print("XP deploy armed -> running once");
+            }
+        }
     }
 }
 
