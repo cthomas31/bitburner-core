@@ -66,7 +66,7 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "hacking.moneyThreshold": 0.7,
     "hacking.securityMargin": 2,
     "hacking.hackMargin": 0.2,
-    "hacking.homeReservedRam": 256,
+    "hacking.homeReservedRam": 4,
 
     // Hacknet
     "hacknet.maxSpendFraction": 0.1,

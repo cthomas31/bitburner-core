@@ -12,8 +12,8 @@
     "controller.scripts.pservManager": "/app/pserv/manager.js",
     "controller.flags.enableGangManager": false,
     "controller.flags.enablePservManager": false,
-    "controller.flags.enableDarkwebChecks": false,
-    "controller.flags.enableCheckFactionServers": false,
+    "controller.flags.enableDarkwebChecks": true,
+    "controller.flags.enableCheckFactionServers": true,
     "controller.hacking.batchFromHacking": 800,
     "controller.targets.switchMinImprovement": 1.15,
 
@@ -30,7 +30,7 @@
     "controller.syscalls.augs.prereqsEveryMs": 3500,
     "controller.syscalls.augs.buyCooldownMs": 2500,
     "controller.augs.buy.repReachBuffer": 25000,
-    "controller.augs.enable": false,
+    "controller.augs.enable": true,
     "controller.augs.buy.maxSpendFraction": 0.35,
     "controller.augs.buy.minCashReserve": 500000000,
     "controller.augs.cache.maxFacts": 75,
@@ -51,7 +51,7 @@
         "Ishima"
     ],
     "controller.factions.enable": false,
-    "controller.factions.workType": "hacking",
+    "controller.factions.workType": "xp",
     "controller.factions.enableDonations": false,
     "controller.factions.chooser.repCacheMs": 300000,
     "controller.factions.chooser.augsCacheMs": 900000,
@@ -69,7 +69,7 @@
     "hacknet.idleLoopMs": 30000,
     "hacknet.activeLoopMs": 50,
 
-    "pserv.enabled": false,
+    "pserv.enabled": true,
     "pserv.hostnamePrefix": "pserv-",
     "pserv.maxServers": 25,
     "pserv.baseRam": 8,
@@ -89,7 +89,7 @@
 
     "stocks.pauseEntries": false,
     "stocks.minHoldAfterEntryTicks": 20,
-    "stocks.minTradeIntervalTicks": 10,
+    "stocks.minTradeIntervalTicks": 8,
     "stocks.rebalanceMs": 6000,
     "stocks.cooldownMs": 20000,
     "stocks.cooldownTicks": 8,

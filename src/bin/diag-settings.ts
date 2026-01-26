@@ -6,13 +6,13 @@ export async function main(ns: NS): Promise<void> {
   reloadSettings(ns);
   const raw = ns.read("/settings.json");
   ns.tprint(`[diag] raw length=${raw?.length ?? 0}`);
-  ns.tprint(`[diag] getNumber(stocks.trend.maxSpreadFrac)=${getNumber(ns, "stocks.trend.maxSpreadFrac")}`);
+  ns.tprint(`[diag] getNumber(hacking.homeReservedRam)=${getNumber(ns, "hacking.homeReservedRam")}`);
 
   try {
     const parsed = JSON.parse(raw);
-    const v = parsed["stocks.trend.maxSpreadFrac"];
+    const v = parsed["hacking.homeReservedRam"];
     ns.tprint(`[diag] JSON.parse key value=${String(v)} type=${typeof v}`);
-    ns.tprint(`[diag] hasKey=${Object.prototype.hasOwnProperty.call(parsed, "stocks.trend.maxSpreadFrac")}`);
+    ns.tprint(`[diag] hasKey=${Object.prototype.hasOwnProperty.call(parsed, "hacking.homeReservedRam")}`);
   } catch (e) {
     ns.tprint(`[diag] JSON.parse FAILED: ${String(e)}`);
     // show a snippet so you can spot trailing commas / garbage
