@@ -1,5 +1,9 @@
 import type { NS } from "@ns";
-import { makeSettingsWatcher, reloadSettings } from "/lib/settings.js";
+import {
+    getString,
+    makeSettingsWatcher,
+    reloadSettings,
+} from "/lib/settings.js";
 import { checkFactionServers } from "/app/hacking/check-faction-servers.js";
 import { getDarkwebPrograms } from "/app/hacking/darkweb-programs.js";
 import {
@@ -138,6 +142,10 @@ export async function main(ns: NS): Promise<void> {
             ctrl.statusMessages.push(
                 new Date(now).toLocaleString() + ": " + reloadStatus
             );
+            CFG.hackingWorkloadMode = getString(
+                ns,
+                "controller.hacking.workloadMode"
+            ) as "AUTO" | "MONEY" | "XP";
         }
 
         const hack = ns.getHackingLevel();
@@ -147,7 +155,10 @@ export async function main(ns: NS): Promise<void> {
         const best = await pickBestTarget(ns, CFG, hack);
         const chosen = chooseStickyTarget(ns, CFG, ctrl, hack, best);
         const target = chosen?.host ?? "n00dles";
-        const mode = pickMoneyFirstMode(hack, CFG.batchFromHacking, formulas);
+        const mode =
+            CFG.hackingWorkloadMode === "XP"
+                ? "XP"
+                : pickMoneyFirstMode(hack, CFG.batchFromHacking, formulas);
 
         tick: {
             await stockMgr.tick(ns, ctrl, now);

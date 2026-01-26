@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
     "controller.scripts.xpDeploy": "/app/hacking/xp-deploy.js",
     "controller.scripts.gangManager": "/app/gang/manager.js",
     "controller.scripts.pservManager": "/app/pserv/manager.js",
+    "controller.hacking.workloadMode": "AUTO",
     "controller.flags.enableGangManager": false,
     "controller.flags.enablePservManager": false,
     "controller.flags.enableDarkwebChecks": false,

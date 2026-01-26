@@ -40,6 +40,10 @@ export function getControllerConfig(ns: NS): ControllerConfig {
         xpDeploy: getString(ns, "controller.scripts.xpDeploy"),
         gangManager: getString(ns, "controller.scripts.gangManager"),
         pservManager: getString(ns, "controller.scripts.pservManager"),
+        hackingWorkloadMode: getString(ns, "controller.hacking.workloadMode") as
+            | "AUTO"
+            | "MONEY"
+            | "XP",
 
         enableGangManager: getBool(ns, "controller.flags.enableGangManager"),
         enablePservManager: getBool(ns, "controller.flags.enablePservManager"),

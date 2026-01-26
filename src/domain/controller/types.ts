@@ -25,6 +25,8 @@ export interface ControllerConfig {
     gangManager: string;
     pservManager: string;
 
+    hackingWorkloadMode: "AUTO" | "MONEY" | "XP";
+
     enableGangManager: boolean;
     enablePservManager: boolean;
     enableDarkwebChecks: boolean;
