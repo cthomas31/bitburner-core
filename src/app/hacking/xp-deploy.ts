@@ -18,6 +18,7 @@ export async function main(ns: NS): Promise<void> {
     ns.disableLog("getServerUsedRam");
 
     const useOnlyPservs = false; // set false if you want all rooted servers, not just pservs
+    const homeReservedRam = getNumber(ns, "hacking.homeReservedRam");
 
     const configuredTargetCount = getNumber(ns, "controller.hacking.xpTargetCount");
     const argTargetCount = Number(ns.args[0]);
@@ -60,8 +61,14 @@ export async function main(ns: NS): Promise<void> {
 
         const maxRam = ns.getServerMaxRam(host);
         const usedRam = ns.getServerUsedRam(host);
-        const freeRam = Math.max(0, maxRam - usedRam);
+        const freeRam = host === "home"
+            ? Math.max(0, ns.getServerMaxRam("home") - ns.getServerUsedRam("home") - homeReservedRam)
+            : Math.max(0, maxRam - usedRam);
         const threads = Math.floor(freeRam / scriptRam);
+
+        if (host === "home") {
+            ns.print(`[deploy-xp] home reserve=${homeReservedRam} free=${freeRam.toFixed(2)} threads=${threads}`);
+        }
 
         if (threads < 1) {
             ns.print(`[deploy-xp] No RAM on ${host} for XP worker`);
