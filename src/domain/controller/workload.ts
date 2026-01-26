@@ -18,7 +18,8 @@ export function reconcileWorkload(ns: NS, CFG: ControllerConfig, ctrl: Controlle
     ctrl.lastTargetApplied = target;
 
     ctrl.ensureBackoff = {};
-    ctrl.xpDeployArmed = true;
+    // xp-deploy is a one-shot deploy script; arm it only when entering XP mode
+    ctrl.xpDeployArmed = mode === "XP";
 }
 
 export function ensureDesiredRunning(

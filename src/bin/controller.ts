@@ -122,7 +122,7 @@ export async function main(ns: NS): Promise<void> {
 
         ensureBackoff: {},
 
-        xpDeployArmed: true,
+        xpDeployArmed: false,
 
         statusMessages: [],
     };
